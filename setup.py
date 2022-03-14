@@ -15,7 +15,7 @@ with open("README.md", "r") as f:
 
 
 setuptools.setup(
-    name="construction",
+    name="flypy",
     version="0.0.1",
     author="Ikechukwu Ogbonna",
     author_email="ieo2105@columbia.edu",

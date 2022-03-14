@@ -67,6 +67,10 @@ class CSVReader(object):
         @return: list of dictionaries with all unique {arg: value} combinations
         @rtype: list
         """
-        items = self.dfs[list(args)].copy().drop_duplicates().tolist().to_dict(
+        items = self.dfs[list(args)].copy().drop_duplicates().to_dict(
             orient="records")
+        return items
+
+    def getColumnSet(self, key):
+        items = self.dfs[key].copy().drop_duplicates().to_list()
         return items

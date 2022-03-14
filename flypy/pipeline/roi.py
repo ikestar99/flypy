@@ -38,8 +38,9 @@ def binStack(array, bins):
     @rtype: numpy.ndarray
     """
     # form a list of binned images with list comprehension
+    bins = [set([min(x, array.shape[0] - 1) for x in b]) for b in bins]
     binned = [np.mean(np.array(
-        [array[t] for t in b]), axis=0) for b in bins]
+        [array[t] for t in bin]), axis=0) for bin in bins]
     binned = np.array(binned, dtype=array.dtype)
     return binned
 

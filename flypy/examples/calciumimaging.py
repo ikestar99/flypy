@@ -53,8 +53,6 @@ RNM = "response_number"
 NRS = "response N"
 # number of channels per image
 CHANNELS = 2
-# index of reference channel for alignment
-REFCHANNEL = 1
 # reciprocal multiple of frequency at which to bin images
 BINSCALAR = 2
 # string in name of background mask for background correction
@@ -83,9 +81,9 @@ def getRowDirectory(rowDict):
     """
     sampleDirectory = getPath(
         DIRECTORY, cleanName(rowDict[CEL]), cleanName("-".join((
-            rowDict[DAT], "".join(("Fly", rowDict[FLY])), rowDict[CEL],
-            "".join(("Z", rowDict[ZPL])), rowDict[LAY]))))
-
+            str(rowDict[DAT]), "".join(
+                ("Fly", str(rowDict[FLY]))), str(rowDict[CEL]),
+            "".join(("Z", str(rowDict[ZPL]))), str(rowDict[LAY])))))
     return sampleDirectory
 
 
@@ -148,6 +146,13 @@ def getFigureDirectory(rowDict):
     return figureDirectory
 
 
+def getLifFile(lifName):
+    # ensure lifName has .lif file extension
+    lifFile = firstGlob(
+        DIRECTORY, "**", "".join(("*", changeExt(lifName), "*")), ext="lif")
+    return lifFile
+
+
 def getImagePath(rowDict):
     """
     Convert row dict from CSVReader object into filepath of image stack
@@ -179,7 +184,7 @@ def getBinnedPath(rowDict):
     return binnedDirectory
 
 
-def getStimFiles(rowDict):
+def getOldStimFile(rowDict):
     """
     Find path to stim file corresponding to current row dict and derive new
     file paath
@@ -190,11 +195,30 @@ def getStimFiles(rowDict):
     @return: old path to stim file, new path to stim file
     @rtype: string, string
     """
+    if type(rowDict[STN]) != str or "nan" in (
+            str(rowDict[STT]), str(rowDict[STN])):
+        return None
+
     oldStim = firstGlob(DIRECTORY, "**", "".join(
-        ("*", rowDict[STN], "*", rowDict[STT], "*")), ext="csv")
-    newStim = (None if oldStim is not None else getPath(
+        ("*", str(rowDict[STN]), "*", str(int(rowDict[STT])))), ext="csv")
+    return oldStim
+
+
+def getNewStimFile(rowDict):
+    """
+    Find path to stim file corresponding to current row dict and derive new
+    file paath
+
+    @param rowDict: row from imaging CSVReader
+    @type rowDict: dict
+
+    @return: old path to stim file, new path to stim file
+    @rtype: string, string
+    """
+    oldStim = getOldStimFile(rowDict)
+    newStim = (None if oldStim is None else getPath(
         getImageDirectory(rowDict), getName(oldStim)))
-    return oldStim, newStim
+    return newStim
 
 
 def getFrameFile(rowDict):
@@ -207,7 +231,7 @@ def getFrameFile(rowDict):
     @return: path to stim frame file
     @rtype: string
     """
-    _, newStim = getStimFiles(rowDict)
+    newStim = getNewStimFile(rowDict)
     frameStim = (None if newStim is None else changeExt(
         "-".join((changeExt(newStim), FRM)), "csv"))
     return frameStim
@@ -339,7 +363,7 @@ def getChannels(rowDict):
     return ch0, ch1
 
 
-def __main__():
+def pipeline():
     # load imaging settings CSV file
     data = CSVReader(CSVPATH)
     """
@@ -347,44 +371,39 @@ def __main__():
     directory structure for all samples to be analyzed, skipping any samples
     for which the procedure is already complete
     """
-    for lifName in tqdm(data(LIF)):
-        # ensure lifName has .lif file extension
-        lifFile = changeExt(lifName, ext="lif")
-        # search for corresponding .lif file
-        lifFile = firstGlob(lifFile)
+    for lifName in tqdm(data.getColumnSet(LIF)):
+        lifFile = getLifFile(lifName)
         if lifFile is None:
-            print("{} not found. Continuing to next .lif file".format(lifFile))
+            print("{} not found".format(lifFile))
             continue
 
         # load .lif file as object from which to extract imaged samples
         lifFile = loadLifFile(lifFile)
         # iterate over all samples in this lif file
-        for rowDict in data[dict(LIF=lifName)]:
+        for rowDict in data[{LIF: lifName}]:
             # file paths for stim file, frame stim file, raw data, directories
             rowDirectory = getRowDirectory(rowDict)
             imageDirectory = getPath(rowDirectory, cleanName(rowDict[STN]))
             subDirs = [
                 rowDirectory, imageDirectory, getMeasurementDirectory(rowDict),
                 getFigureDirectory(rowDict), getMaskDirectory(rowDict)]
-            oldStim, newStim = getStimFiles(rowDict)
+            oldStim = getOldStimFile(rowDict)
+            newStim = getNewStimFile(rowDict)
             hyperstackPath = getImagePath(rowDict)
-            # skip if sample already processed
-            if oldStim is None:
-                print("{} has no associated stim file".format(imageDirectory))
-                continue
-            elif op.isfile(newStim):
-                continue
-            else:
-                # move associated stim file to imageDirectory
-                movePath(oldStim, newStim)
-
             # create directory structure for current sample if not present
             for directory in subDirs:
                 makeDir(directory)
 
             # extract image from lifFile object and save
-            hyperstack = getLifImage(lifFile, idx=rowDict[LNM])
-            saveTZCYXTiff(hyperstackPath, hyperstack, shape="TZCYX")
+            if not op.isfile(hyperstackPath):
+                hyperstack = getLifImage(lifFile, idx=rowDict[LNM] - 1)
+                saveTZCYXTiff(hyperstackPath, hyperstack, shape="TZCYX")
+            # move associated stim file to imageDirectory
+            if type(oldStim) == str and oldStim != newStim:
+                movePath(oldStim, newStim)
+            elif oldStim is None:
+                # print("{} has no stim file".format(imageDirectory))
+                pass
 
     """
     following code block in for loop will iterate over unpacked
@@ -406,12 +425,12 @@ def __main__():
         frames = [h.shape[0] for h in hyperstacks]
         # concatenate all images in sample for cross-stimulus alignment
         hyperstack = (
-            np.concatenate(hyperstacks, axis=0) if len(hyperstacks) == 1
+            np.concatenate(hyperstacks, axis=0) if len(hyperstacks) > 1
             else hyperstacks[0])
         # align hyperstack three times
         for _ in range(3):
             hyperstack = alignStack(
-                hyperstack, channel=rowDicts[0], mode="rigid")
+                hyperstack, channel=int(rowDicts[0][REF]), mode="rigid")
 
         # split alighned hyperstacks into original rows and save each one
         frame = 0
@@ -430,7 +449,7 @@ def __main__():
     """
     for rowDict in tqdm(data):
         # file paths for stim file, frame stim file, raw data, and binned data
-        _, newStim = getStimFiles(rowDict)
+        newStim = getOldStimFile(rowDict)
         frameStim = getFrameFile(rowDict)
         hyperstackPath = getImagePath(rowDict)
         binnedPath = getBinnedPath(rowDict)
@@ -452,9 +471,13 @@ def __main__():
         saveTZCYXTiff(binnedPath, hyperstack, "TZCYX")
 
     """
+    TODO: check all code below this marker. All upstream code verified and
+        functional as of 20220312 20:50:00, verified by Ike Ogbonna
+    """
+    import sys; sys.exit()
+    """
     following code block in for loop will iterate over unpacked samples and
     generate masks for each stimulus-paired sample using machine learning
-    
     well, it will in theory. At some point this will work... ¯\_(ツ)_/¯
     """
     for rowDict in tqdm(data):
@@ -620,7 +643,7 @@ def __main__():
                 for e in dfr[[ENM]].unique().tolist():
                     responses = dfr[(dfr[[CHN]] == c) & (dfr[[ENM]] == e)][
                         subColumns].to_numpy()[0]
-                    avg = {" ".join((c, e)): smooth(responses)}
+                    avg = {" ".join((str(c), str(e))): smooth(responses)}
 
             figures += [makeFigure(
                 X=np.array(subColumns, dtype=float), Ys=avg,
@@ -629,20 +652,3 @@ def __main__():
                 subs=sub)]
 
         savePillowArray(averageFigure, figures)
-
-
-    sTypes = {"on/off": ["flash", "PD"], "multiple": ["moving"]}
-    sNames = ["2s", "10s", "moving", "PD"]
-    rrHead = ["global_time", "rel_time", imDims[2], "epoch_number"]
-    exHead = ["size", "response_number", "epoch_label"]
-    rfHead = [
-        "rmax", "pmax", ("x", "x_std"), ("y", "y_STD"),
-        ("amplitude", "amplitude_std"), "mappable?"]
-    months = (
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-    imDims = ["Hin", "Win", "frames", "N"]
-
-
-# if __name__ == "__main__":
-#     __main__()

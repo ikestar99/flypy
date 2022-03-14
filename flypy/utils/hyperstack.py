@@ -156,3 +156,61 @@ def saveMultipageTiff(file, array, mode="L"):
     array[0].save(
         file, compression="tiff_deflate", save_all=True,
         append_images=array[1:])
+
+
+def concatenateTZCYXArray(arrays, axis):
+    """
+    Concatenate multiple hyperstacks of identical shape in all axes except for
+    the concatenation axis
+
+    @param arrays: iterable of 5D hyperstacks with identical shapes except for
+        axis along which to concatenate. Concatenation axis must correspond to
+        "axis" parameter
+    @type arrays: iterable
+    @param axis: axis along which to do concatenation:
+        0: concatenate first time dimension
+        1: concatenate second depth dimension
+        2: concatenate third channel dimension
+    @type axis: int
+
+    @return: concatenated hyperstack of same shape as input arrays except
+        along concatenation axis
+
+        list of ordered lengths of input arrays arrays along concatenation axis
+    @rtype: numpy.ndarray, list
+    """
+    lengths = [array.shape[axis] for array in arrays]
+    array = np.concatenate(arrays, axis=axis)
+    return array, lengths
+
+
+def splitTZCYXArray(array, lengths, axis):
+    """
+    Split hyperstack into multiple hyperstacks of identical shape in all axes
+    except for the split axis
+
+    @param array: 5D hyperstack to split
+    @type array: numpy.ndarray
+    @param lengths: list of ordered lengths of of output arrays arrays along
+        split axis
+    @type lengths: list
+    @param axis: axis along which to split:
+        0: split first time dimension
+        1: split across second depth dimension
+        2: split across third channel dimension
+    @type axis: int
+
+    @return: list of 5D hyperstacks with identical shapes except for split
+        axis. Array[x].shape[axis] = length[x]
+    @rtype: list
+    """
+    lengths = lengths + [0]
+    lengths = [sum(lengths[:x]) for x in range(len(lengths))]
+    slices = [slice(None)] * array.ndim
+    arrays = list()
+    for x in range(len(lengths) - 1):
+        currentSlice = slices
+        currentSlice[axis] = slice(lengths[x], lengths[x + 1])
+        arrays = arrays + [array[tuple(currentSlice)]]
+
+    return arrays

@@ -118,9 +118,11 @@ def _countFrames(dfs):
 
     dfs[FRM] = (
         frames[:, 0] * np.sum(frames, axis=-1)).astype(int)
-    dfs = dfs.groupby([FRM]).median().reset_index()
-    dfs = dfs.sort_values(FRM, ascending=True)
+    dfs = dfs.groupby([FRM, ENM]).median().reset_index().sort_values(
+        FRM, ascending=True)
     dfs = dfs[dfs[FRM] >= 1]
+    if dfs.shape[0] != dfs[FRM].max():
+        dfs[FRM] = np.array(range(dfs.shape[0])) + 1
     return dfs
 
 
@@ -167,7 +169,7 @@ def _extractBinFrames(dfs, length, interval, scalar):
         CSV should already have imaging frames counted
     @type dfs: pandas.DataFrame
     @param length: temporal duration of each epoch in seconds
-    @type length: float
+    @type le                                      ngth: float
     @param interval: temporal duration of each frame in seconds
     @type interval: float
     @param scalar: multiple of interval at which to conduct binning
@@ -190,18 +192,17 @@ def _extractBinFrames(dfs, length, interval, scalar):
     binFrames = list()
     stmFrames = list()
     width = interval * scalar
-    bins = np.arange(0, length, width)
     # for every unique epoch type in "epoch_number" column
     for epoch in sorted(dfs[ENM].unique().tolist()):
         #  isolate all stimulus rows corresponding to a particualr epoch
         dfn = dfs[dfs[ENM] == epoch].copy()
-        for i, t in enumerate(bins[:-1].tolist()):
+        for t in np.arange(0, length, width):
             # a bin is the relative time windown [t, t + width)
-            frm = dfn[(dfn[RTM] >= t) & (dfn[RTM] < (
-                t + width))]
-            binFrames += [frm[FRM].copy().to_numpy().tolist()]
-            stmFrames += [frm[ENM].max()]
-            if STP in frm.columns:
-                stmFrames[-1] = [frm["stim_type"].max()]
+            dff = dfn[(dfn[RTM] >= t) & (dfn[RTM] < (t + width))]
+            frm = np.squeeze((dff[FRM].to_numpy()) - 1).tolist()
+            binFrames += ([frm] if type(frm) == list else [[frm]])
+            stmFrames += [dff[ENM].max()]
+            if STP in dff.columns:
+                stmFrames[-1] = [dff["stim_type"].max()]
 
     return binFrames, stmFrames

@@ -207,6 +207,6 @@ def firstGlob(*args, ext=None):
     @rtype: string
     """
     path = getPath(*args, ext=ext)
-    path = (gg(path, recursive=True) if "**" in args else gg(path))
+    path = (gg(path, recursive=True) if "**" in path else gg(path))
     path = (path[0] if len(path) > 0 else None)
     return path

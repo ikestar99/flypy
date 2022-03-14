@@ -77,8 +77,8 @@ def alignStackDimension(ref, mov, axis, channel, mode="rigid"):
     @param mov: 5D hyperstack to be transformed
     @type mov: numpy.ndarray
     @param axis: axis along which to do alignment:
-        0: align across first time dimension
-        1: align across second depth dimension
+        0: align first time dimension
+        1: align second depth dimension
     @type axis: int
     @param channel: reference channel from which to derive transformation
         matrices
@@ -101,7 +101,7 @@ def alignStackDimension(ref, mov, axis, channel, mode="rigid"):
             by reistering mov[T, Z, reference channel, :, :] image to static
             ref[T (0 if axis = 0), Z (0 if axis == 1), reference channel, :, :]
             """
-            axes = ((1, 0) if axis == 0 else (0, 1))
+            axes = ((1, 0) if axis == 1 else (0, 1))
             refImage = ref[t * axes[0], z * axes[1], channel]
             tmat = registerImage(refImage, mov[t, z, channel], mode=mode)
             for c in range(mov.shape[2]):
@@ -133,6 +133,6 @@ def alignStack(mov, channel, mode):
         ref = np.mean(mov, axis=1).astype("uint8")[:, np.newaxis]
         mov = alignStackDimension(ref, mov, axis=1, channel=channel, mode=mode)
     if mov.shape[0] > 1:
-        ref = np.mean(mov, axis=1).astype("uint8")[np.newaxis]
+        ref = np.mean(mov, axis=0).astype("uint8")[np.newaxis]
         mov = alignStackDimension(ref, mov, axis=0, channel=channel, mode=mode)
     return mov
