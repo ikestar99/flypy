@@ -7,6 +7,8 @@ Created on Mon March 7 11:41:02 2022
 """
 
 
+import numpy as np
+
 from ..main import tqdm
 from ..utils.pathutils import *
 from ..utils.hyperstack import (
@@ -40,15 +42,19 @@ def alignImagesInLIFFile(lifPath, indexes, channel):
         should be 1
     @type channel: int
     """
+    saveDir = getPath(changeExt(lifPath))
+    makeDir(saveDir)
     lifFile = loadLifFile(lifPath)
     arrays = [getLifImage(lifFile, idx=idx - 1) for idx in indexes]
     arrays, lengths = concatenateTZCYXArray(arrays, axis=0)
     for x in tqdm(range(3)):
         arrays = alignStack(arrays, channel, mode="rigid")
 
+    savePath = getPath(saveDir, "LIF Image {} Average".format(
+        " ".join([str(i) for i in indexes])), ext="tif")
+    average = np.mean(arrays, axis=(0, 1), keepdims=True)
+    saveTZCYXTiff(savePath, average, "TZCYX")
     arrays = splitTZCYXArray(arrays, lengths, axis=0)
-    saveDir = getPath(changeExt(lifPath))
-    makeDir(saveDir)
     for i, array in enumerate(arrays):
         savePath = getPath(
             saveDir, "LIF Image {}".format(str(indexes[i])), ext="tif")
