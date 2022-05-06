@@ -314,7 +314,7 @@ def plotAverageResponses(directory):
     code block equivalent to former "plot average responses" portion of
     automated endopy pipeline
     """
-    if not directory.indFile or not directory.frameFile: # or directory.avgFig:
+    if not directory.indFile or not directory.frameFile or directory.avgFig:
         return
 
     dfit = pd.read_csv(directory.indFile)

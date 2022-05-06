@@ -150,10 +150,10 @@ def lineGraph(Ys, titles, dYs=None, light=None, subs=[""]):
         ax[r].set_ylabel(titles[2])
         ax[r].locator_params(axis="x", nbins=10)
         ax[r].locator_params(axis="y", nbins=9)
-        ax[r].set_xlim(left=np.min(X), right=np.max(X) * 1.25)
+        ax[r].set_xlim(left=np.min(X), right=np.max(X))
         ax[r].set_ylim(bottom=-y_max, top=y_max)
         ax[r].legend(
-            loc="center right", frameon=False, bbox_to_anchor=(1, 1))
+            loc="upper right", frameon=False, bbox_to_anchor=(1, 1))
 
     fig.suptitle(titles[0], fontsize=10)
     plt.tight_layout()

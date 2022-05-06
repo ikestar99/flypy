@@ -12,10 +12,10 @@ import flypy.utils.csvreader as csv
 from flypy.utils.csvcolumns import MAIN
 
 
-# directory that contains ALL files to be analyzed (.lif, .csv, .tif)
-DIRECTORY = "/Users/ike/Desktop/test copy"
-# path to imaging.csv file with desired settings
-CSVPATH = "/Users/ike/Desktop/test copy/New Pipeline Imaging Settings.csv"
+# # directory that contains ALL files to be analyzed (.lif, .csv, .tif)
+# DIRECTORY = "/Users/ike/Documents/Columbia University/Barnhart Lab/Data/Fly Imaging Data"
+# # path to imaging.csv file with desired settings
+# CSVPATH = "/Users/ike/Documents/Columbia University/Barnhart Lab/Data/Fly Imaging Data/New Pipeline Imaging Settings.csv"
 
 
 def __main__():
