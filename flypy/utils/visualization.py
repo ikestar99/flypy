@@ -167,8 +167,10 @@ def lineGraph(Ys, titles, dYs=None, light=None, subs=[""]):
 
 def barPlot(
         data, catCol, valCol, title, rowCol=None, hueCol=None, bootstrap=1000,
-        ci=0.95):
+        ci=0.95, xLabel=None):
     plt.rcParams["font.size"] = "10"
+    plt.rcParams["font.weight"] = "bold"
+    plt.rcParams["axes.labelweight"] = "bold"
     height = data[catCol].unique().size * 1
     height = (
         height * data[hueCol].unique().size if hueCol is not None else height)
@@ -186,17 +188,19 @@ def barPlot(
         kind="bar", capsize=.2, ci=ci, n_boot=bootstrap, sharex=False)
 
     for ax in fg.axes.flatten():
+        ax.set_yticklabels(
+            ax.get_yticklabels(), rotation=45, verticalalignment='top')
+        ax.locator_params(axis="x", nbins=5)
+        title = ax.get_title()
+        ax.set_xlabel(title)
+        ax.set_title("")
         sns.despine(ax=ax, top=True, right=True, left=False, bottom=False)
         ax.spines['left'].set_position(('data', 0))
         ax.spines['left'].set_linewidth(2)
         ax.spines['bottom'].set_linewidth(2)
-        title = ax.get_title()
-        ax.set_xlabel(title)
-        ax.set_title("")
-        ax.locator_params(axis="x", nbins=10)
-        ax.set_yticklabels(
-            ax.get_yticklabels(), rotation=45, verticalalignment='top')
-        ax.set_xlim(left=min(ax.get_xlim()), right=max(ax.get_xlim()) * 1.25)
+        ax.set_xlim(left=min(ax.get_xlim()), right=max(ax.get_xlim()))
+        if xLabel is not None:
+            ax.set_xlabel(xLabel)
 
     fig = plt.gcf()
     fig.suptitle(title, fontsize=10)

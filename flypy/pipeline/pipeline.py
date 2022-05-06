@@ -388,7 +388,7 @@ def plotAggregateIntegration(directory):
         RESP["reg"], RESP["chn"], RESP["int"]])
     figure = barPlot(
         data, catCol=RESP["reg"], valCol=RESP["int"], hueCol=RESP["chn"],
-        title="Integrated Responses")
+        title="Integrated Responses", xLabel="area under response curve (s)")
     savePillowArray(str(directory.totIntFig), [figure])
 
 
