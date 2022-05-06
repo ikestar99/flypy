@@ -7,11 +7,13 @@ Created on Tue May 25 11:41:02 2021
 """
 
 
+import numpy as np
 import pandas as pd
 
 
 class CSVReader(object):
-    def __init__(self, file):
+    @classmethod
+    def fromFile(cls, file):
         """
         Instantiaate CSVReader object
 
@@ -19,13 +21,78 @@ class CSVReader(object):
         @type file: string
         """
         # load entire csv file as 2D pandas dataframe
-        self.dfs = pd.read_csv(file)
+        reader = CSVReader()
+        reader.dfs = pd.read_csv(file)
+        return reader
+
+    @classmethod
+    def fromDataFrame(cls, dfs):
+        """
+        Instantiaate CSVReader object
+
+        @param dfs: complete file path to imaging settings.csv file
+        @type dfs: string
+        """
+        # load entire csv file as 2D pandas dataframe
+        reader = CSVReader()
+        reader.dfs = dfs
+        return reader
+
+    def __init__(self):
+        self.dfs = None
         self.index = 0
 
     def __len__(self):
         return self.dfs.shape[0]
 
-    def __getitem__(self, item):
+    def __contains__(self, key):
+        return key in self.dfs.columns
+
+    def __getitem__(self, idx):
+        item = self.dfs.iloc[idx].to_dict()
+        item = {k: (None if self.isNan(i) else i) for k, i in item.items()}
+        return item
+
+    def __setitem__(self, idx, value):
+        for key, item in value.items():
+            self.dfs.loc[idx, key] = item
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.index >= len(self):
+            self.index = 0
+            raise StopIteration
+        else:
+            row = self[self.index]
+            self.index += 1
+            return row
+
+    @staticmethod
+    def isNan(item):
+        value = (True if item is None else False)
+        value = (
+            True if (type(item) == np.float64 and np.isnan(item)) else value)
+        value = (True if str(item) == "nan" else value)
+        return value
+
+    def empty(self):
+        self.dfs = pd.DataFrame(columns=self.dfs.columns)
+
+    def dropna(self, *args):
+        args = [arg for arg in args if arg in self]
+        self.dfs = self.dfs.dropna(axis=0, subset=args)
+
+    def save(self, file):
+        self.dfs.to_csv(file, encoding="utf-8", index=False)
+
+    def getColumn(self, key, unique=False):
+        columns = (
+            self.dfs[key].unique() if unique else self.dfs[key].to_numpy())
+        return columns.flatten()
+
+    def filterRows(self, item, unique=False):
         """
         Extract all imaging CSV entries that match a patern defined by item
 
@@ -42,24 +109,12 @@ class CSVReader(object):
         for key, item in item.items():
             dfs = dfs[dfs[key] == item]
 
-        dfs = dfs.to_dict(orient="records")
-        return dfs
+        dfs = (dfs.drop_duplicates() if unique else dfs)
+        return CSVReader.fromDataFrame(dfs)
 
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        if self.index >= len(self):
-            self.index = 0
-            raise StopIteration
-        else:
-            row = self.dfs.iloc[self.index].to_dict()
-            self.index += 1
-            return row
-
-    def __call__(self, *args):
+    def filterColumns(self, *args, unique=False):
         """
-        Get all unique values in column of CSV
+        Get all values in column(s) of CSV
 
         @param args: column headers from which to extract unique values
         @type args: arguments
@@ -67,10 +122,6 @@ class CSVReader(object):
         @return: list of dictionaries with all unique {arg: value} combinations
         @rtype: list
         """
-        items = self.dfs[list(args)].copy().drop_duplicates().to_dict(
-            orient="records")
-        return items
-
-    def getColumnSet(self, key):
-        items = self.dfs[key].copy().drop_duplicates().to_list()
-        return items
+        dfs = self.dfs[list(args)].copy()
+        dfs = (dfs.drop_duplicates() if unique else dfs)
+        return CSVReader.fromDataFrame(dfs)

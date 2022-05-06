@@ -10,54 +10,155 @@ Created on Tue May 25 11:41:02 2021
 import numpy as np
 import pandas as pd
 
-
-AIN4 = ("AIN4", 2.437588)
-THRESHOLD = 1
-# column keys in stimulus.csv file
-FRM = "frames"
-RTM = "rel_time"
-GTM = "global_time"
-STP = "stim_type"
-ENM = "epoch_number"
+from ..utils.csvreader import CSVReader
+from ..utils.csvcolumns import STIM
 
 
-class Stimulus(object):
+class Stimulus(CSVReader):
     """
     Simple class to parse stimulus.csv files from live imaging sessions
     """
 
-    def __init__(self, file):
-        """
-        Instantiaate Stimulus object
-
-        @param file: complete file path to stimulus.csv file
-        @type file: string
-        """
-        # load entire csv file as 2D pandas dataframe and count frames
+    def __init__(self, file, frames=None, threshold=1, voltage=2.437588):
+        super().__init__()
         self.dfs = pd.read_csv(file)
-        if FRM not in self.dfs.columns:
-            self.dfs = _countFrames(self.dfs)
 
-        (self.epochTime, self.epochFrames, self.totalFrames,
-         self.frameTime, self.frequency) = _extractImagingTimings(self.dfs)
+        self.voltage = voltage
+        self.threshold = threshold
+        self.epochTime = None
+        self.frames = None
+        self.frameTime = None
+        self.epochFrames = None
+        self.frequency = None
+        self.onTime = None
+        self.offTime = None
+        self.multiple = None
+        if STIM["enm"] not in self:
+            self._addEpochNumber()
+        if STIM["frm"] not in self:
+            self._countFrames(frames)
+        if STIM["epc"] not in self:
+            self._splitEpochs()
 
-    def __getitem__(self, key):
+        self._extractOnTime()
+        self._extractImagingTimings()
+        self.multiple = (True if self.getColumn(
+            STIM["enm"], unique=True).size > 1 else False)
+        self.numCols = [str(x) for x in range(self.epochFrames)]
+        self.xLabels = np.linspace(
+            0, self.epochTime, num=self.epochFrames, endpoint=False)
+
+    def _addEpochNumber(self):
+        # add a dummy "epoch_number" column to csv files that lack one
+        self.dfs.insert(0, STIM["enm"], 1)
+
+    def _countFrames(self, finalFrame):
         """
-        extract stim file dataframe column as numpy array
-
-        @param key: name of column to extract
-        @type key: string
-
-        @return: array of values in specified column
-        @rtype: numpy.ndarray
+        Identify stimulus frames corresponding to imaged frames
         """
-        if key in self.dfs.columns:
-            return self.dfs[[key]].to_numpy()
+        self.dfs = self.dfs.sort_values(
+            [STIM["gbt"], STIM["rlt"]], ascending=True)
+        # extract voltage signal, set values >= threshold to trigger voltage
+        vs = self.getColumn(STIM["vol"])
+        vs = (vs > self.threshold) * self.voltage
+        # Calculate change in voltage signal for each stimulus frame
+        vs[1:] = (vs[1:] - vs[:-1])
+        vs[0] = 0
+        # count imaging frames from the change in voltage signal
+        frames = np.zeros((vs.size, 2))
+        for n in range(1, len(vs) - 1, 1):
+            frames[n] = frames[n - 1]
+            if all((
+                    vs[n] > vs[n - 1],
+                    vs[n] > vs[n + 1],
+                    vs[n] > self.threshold)):
+                frames[n, 0] += 1
+            elif all((
+                    vs[n] < vs[n - 1],
+                    vs[n] < vs[n + 1],
+                    vs[n] < -self.threshold)):
+                frames[n, 1] -= 1
+
+        self.dfs.insert(
+            self.dfs.shape[1], STIM["frm"],
+            (frames[:, 0] * np.sum(frames, axis=-1)).astype(int))
+        self.dfs = self.dfs.sort_values(STIM["frm"], ascending=True).groupby(
+            [STIM["frm"], STIM["enm"]]).first().reset_index()
+        self.dfs = self.dfs[
+            (self.dfs[STIM["frm"]] >= 1) &
+            (self.dfs[STIM["frm"]] <= finalFrame)]
+
+    def _splitEpochs(self):
+        rel = self.getColumn(STIM["rlt"])
+        rel[1:] = rel[1:] - rel[:-1]
+        rel[0] = 0
+        rel = np.cumsum(
+            (rel < (np.max(self.getColumn(STIM["rlt"])) * -0.5)).astype(int))
+        self.dfs.insert(self.dfs.shape[1], STIM["epc"], rel)
+
+    def _extractImagingTimings(self):
+        """
+        Extract frequency, time per frame, and epoch length information from
+        stimulus CSV
+
+        @return: tuple with following entries as floating-point numbers:
+            0: temporal duration of each epoch in seconds
+            1: number of frames in each epoch
+            2: total number of frames
+            3: temporal duration of each frame in seconds
+            4: imaging frequency, averagenumber of frames per second
+        @rtype: tuple
+        """
+        # extract epoch length as the maximum relative time within an epoch
+        self.epochTime = int(np.ceil(np.max(self.getColumn(STIM["rlt"]))))
+        self.frames = int(np.max(self.getColumn(STIM["frm"])))
+        # extract time per frame as the average change in global time
+        dfs = self.dfs.copy().groupby(STIM["frm"]).mean().reset_index()
+        dfs = dfs[STIM["gbt"]].copy().to_numpy()
+        self.frameTime = np.mean(dfs[1:] - dfs[:-1])
+        self.epochFrames = int(self.epochTime // self.frameTime)
+        # extract imaging frequency as the reciprocal of time per frame
+        self.frequency = 1 / self.frameTime
+
+    def _extractOnTime(self):
+        if STIM["smt"] in self:
+            dfs = self.dfs[[STIM["smt"], STIM["rlt"]]].copy()
+            dfs = dfs[dfs[STIM["smt"]] == 1]
+            self.onTime = np.min(dfs[STIM["rlt"]])
+            self.offTime = np.max(dfs[STIM["rlt"]])
+
+    def generateSplitEpochs(self):
+        for e in self.getColumn(STIM["epc"], unique=True)[1:-1]:
+            sub = self.dfs[self.dfs[STIM["epc"]] == e].copy()
+            frames = sub[STIM["frm"]].tolist()
+            frames = frames + ([frames[-1]] * (self.epochFrames - len(frames)))
+            frames = frames[:self.epochFrames]
+            number = sub.mode()[STIM["enm"]][0]
+            yield e, number, frames
+
+    def stimswitch(self):
+        """
+        identify stim switch points
+        """
+        stim_state = self.getColumn(STIM["rlt"])
+        stim_state = (self.onTime < stim_state) * (stim_state < self.offTime)
+        stim_state = stim_state.astype(int)
+        ON_indices = list(np.where(np.diff(stim_state) == 1) + 1)
+        OFF_indices = list(np.where(np.diff(stim_state) == -1) + 1)
+        return ON_indices, OFF_indices
 
     def binFrames(self, scalar):
         """
-        See _extractBinFrames() docstring
+        Extract an ordering of frames needed to bin a corresponding image
+        at a scalar multiple of the frameTime. Equivalent to resampling the
+        image at a scalar^-1 multiple of the imaging frequency
 
+        Note: "binning" a sample with a scalar of 1 is an identical operation
+        to averaing between, but not within, all identical epochs
+
+        @param dfs: stimulus CSV file stored as pandas dataframe. This
+            CSV should already have imaging frames counted
+        @type dfs: pandas.DataFrame
         @param scalar: multiple of interval at which to conduct binning
         @type scalar: float
 
@@ -75,134 +176,25 @@ class Stimulus(object):
         corresponding to each bin in the previous list
         @rtype: list, list
         """
-        binFrames, stmFrames = _extractBinFrames(
-            self.dfs, self.epochTime, self.frameTime, scalar=scalar)
+        binFrames = list()
+        stmFrames = list()
+        width = self.frameTime * scalar
+        # for every unique epoch type in "epoch_number" column
+        for epoch in sorted(self.dfs[STIM["enm"]].unique().tolist()):
+            #  isolate all stimulus rows corresponding to a particualr epoch
+            dfn = self.dfs[self.dfs[STIM["enm"]] == epoch].copy()
+            for t in np.arange(0, self.epochTime, width):
+                # a bin is the relative time windown [t, t + width)
+                dff = dfn[
+                    (dfn[STIM["rlt"]] >= t) & (dfn[STIM["rlt"]] < (t + width))]
+                if dff.empty:
+                    continue
+
+                frm = np.squeeze(
+                    (dff[STIM["frm"]].to_numpy(dtype=int)) - 1).tolist()
+                binFrames += ([frm] if type(frm) == list else [[frm]])
+                stmFrames += [int(dff[STIM["enm"]].max())]
+                if STIM["smt"] in self:
+                    stmFrames[-1] = [int(dff["stim_type"].max())]
+
         return binFrames, stmFrames
-
-
-def _countFrames(dfs):
-    """
-    Identify stimulus frames correspond to imaged frames
-
-    @param dfs: stimulus CSV file stored as pandas dataframe
-    @type dfs: pandas.DataFrame
-
-    @return: stimulus CSV file with additional frames column wherein
-        every CSV row corresponds to a unique imaged frame
-    @rtype: pandas.DataFrame
-    """
-    # return input if frames already counted
-    if FRM in dfs.columns:
-        return dfs
-
-    # add a dummy "epoch_number" column to csv files that lack one
-    if ENM not in dfs.columns:
-        dfs[ENM] = 1
-
-    # extract voltage signal, set values >= threshold to trigger voltage
-    vts = np.squeeze(dfs[AIN4[0]].to_numpy())
-    vts = (vts > THRESHOLD).astype(int) * AIN4[1]
-    # Calculate change in voltage signal for each stimulus frame
-    vts[0] = 0
-    vts[1:] = (vts[1:] - vts[:-1])
-    # count imaging frames from the change in voltage signal
-    frames = np.zeros((vts.size, 2))
-    for n in range(1, len(vts) - 1, 1):
-        frames[n] = frames[n - 1]
-        if all(((vts[n] > vts[n - 1]), (vts[n] > vts[n + 1]))):
-            # (vts[n] > Stimulus.threshold))):
-            frames[n, 0] += 1
-        elif all(((vts[n] < vts[n - 1]), (vts[n] < vts[n + 1]))):
-            # (vts[n] < 0 - Stimulus.threshold))):
-            frames[n, 1] -= 1
-
-    dfs[FRM] = (
-        frames[:, 0] * np.sum(frames, axis=-1)).astype(int)
-    dfs = dfs.groupby([FRM, ENM]).median().reset_index().sort_values(
-        FRM, ascending=True)
-    dfs = dfs[dfs[FRM] >= 1]
-    if dfs.shape[0] != dfs[FRM].max():
-        dfs[FRM] = np.array(range(dfs.shape[0])) + 1
-    return dfs
-
-
-def _extractImagingTimings(dfs):
-    """
-    Extract frequency, time per frame, and epoch length information from
-    stimulus CSV
-
-    @param dfs: stimulus CSV file stored as pandas dataframe. This
-        CSV should already have imaging frames counted
-    @type dfs: pandas.DataFrame
-
-    @return: tuple with following entries as floating-point numbers:
-        0: temporal duration of each epoch in seconds
-        1: number of frames in each epoch
-        2: total number of frames
-        3: temporal duration of each frame in seconds
-        4: imaging frequency, averagenumber of frames per second
-    @rtype: tuple
-    """
-    # extract epoch length as the maximum relative time within an epoch
-    epochTime = np.max(dfs[RTM])
-    totalFrames = np.max(dfs[FRM])
-    # extract time per frame as the average change in global time
-    dfs = dfs.groupby(FRM).mean().reset_index()
-    dfs = dfs[GTM].to_numpy()
-    frameTime = np.mean(dfs[1:] - dfs[:-1])
-    epochFrames = epochTime // frameTime
-    # extract imaging frequency as the reciprocal of time per frame
-    frequency = 1 / frameTime
-    return epochTime, epochFrames, totalFrames, frameTime, frequency
-
-
-def _extractBinFrames(dfs, length, interval, scalar):
-    """
-    Extract an ordering of frames needed to bin a corresponding image
-    at a scalar multiple of the frameTime. Equivalent to resampling the
-    image at a scalar^-1 multiple of the imaging frequency
-
-    Note: "binning" a sample with a scalar of 1 is an identical operation
-    to averaing between, but not within, all identical epochs
-
-    @param dfs: stimulus CSV file stored as pandas dataframe. This
-        CSV should already have imaging frames counted
-    @type dfs: pandas.DataFrame
-    @param length: temporal duration of each epoch in seconds
-    @type le                                      ngth: float
-    @param interval: temporal duration of each frame in seconds
-    @type interval: float
-    @param scalar: multiple of interval at which to conduct binning
-    @type scalar: float
-
-    @return: list of imaging frames in each bin. Each index in list is a
-    sublist of all frames that should be averaged to yield the index-th
-    frame in the binned image. ie the following list of lists:
-    [[1, 5, 8, 9]
-     [2, 3, 6, 10]
-     [4, 7, 11]]
-    indicates that there are 3 binned frames from an imaging array with
-    11 unbinned frames. The first binned image in this example includes all
-    frames in bins[0] -- frames 1, 5, 8, and 9.
-
-    Second returned entity is a second list that tracks the epoch frame
-    corresponding to each bin in the previous list
-    @rtype: list, list
-    """
-    binFrames = list()
-    stmFrames = list()
-    width = interval * scalar
-    # for every unique epoch type in "epoch_number" column
-    for epoch in sorted(dfs[ENM].unique().tolist()):
-        #  isolate all stimulus rows corresponding to a particualr epoch
-        dfn = dfs[dfs[ENM] == epoch].copy()
-        for t in np.arange(0, length, width):
-            # a bin is the relative time windown [t, t + width)
-            dff = dfn[(dfn[RTM] >= t) & (dfn[RTM] < (t + width))]
-            frm = np.squeeze((dff[FRM].to_numpy()) - 1).tolist()
-            binFrames += ([frm] if type(frm) == list else [[frm]])
-            stmFrames += [dff[ENM].max()]
-            if STP in dff.columns:
-                stmFrames[-1] = [dff["stim_type"].max()]
-
-    return binFrames, stmFrames

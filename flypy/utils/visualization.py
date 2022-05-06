@@ -9,13 +9,13 @@ Created on Fri Apr  9 03:38:05 2021
 
 import io
 import time
+import numpy as np
+import pandas as pd
 from PIL import Image
 import seaborn as sns
 import matplotlib.pyplot as plt
 
 
-COLORS = ("#FF0000", "#FF8000", "#FFFF00", "00FF00", "00FFFF", "0000FF",
-          "7f00ff", "FF00FF", "FF00F7", "808080")
 SPACE = "    "
 TRUNK = "│   "
 SPLIT = "├── "
@@ -31,6 +31,14 @@ def getInput(message=""):
     wait(message)
     value = input(">> ")
     return value
+
+
+def formatTitle(conserved, label):
+    if conserved in label:
+        label = label.replace(conserved, "")
+
+    label = label.strip()
+    return label
 
 
 # def getDirectoryTree(dirDict):
@@ -85,35 +93,112 @@ def getInput(message=""):
 #     return string
 
 
-# colors = ("#F1160C", "#0AC523", "#0F37FF", "#8F02C5")
-#
-def makeFigure(X, Ys, titles, dYs=None, light=None, sub=None):
+def lineGraph(Ys, titles, dYs=None, light=None, subs=[""]):
+    """
+    generate an elegant, formated response figure for a particular ROI
+
+    @param X: shared x-coordinates of curve to be graphed
+    @type X: numpy.ndarray
+    @param Ys: dictionary of {indicator: y-coordinates of specific indicator}
+        pairings for all indicators to be plotted. Y-coordinates should be
+        stored in numpy arrays
+    @type Ys: dict
+    @param titles: [figure title, x-axis label, y-axis label]
+    @type titles: iterable
+    @param dYs: dictionary of {indicator: std or variance} pairings for all
+        indicators to be plotted. Y-coordinates should be stored in numpy
+        arrays
+    @type dYs: dict
+    @param light: [stimulus on time, stimulus off time]
+    @type light: list
+    @param subs:
+    @type subs:
+
+    @return: response figure made with matplotlib, stored in a buffer, and
+    converted into an image for performant use and easy storage
+    @rtype: PIL.Image
+    """
     plt.rcParams["font.size"] = "8"
-    sns.set_style("darkgrid")
+    # sns.set_style("darkgrid")
     fig, ax = plt.subplots(
-        nrows=len(Ys), figsize=(4, (3 * len(Ys))), sharex=True, dpi=150)
-    ax = ([ax] if len(Ys) == 1 else ax)
-    col = sns.color_palette("rocket", n_colors=len(Ys))  # "viridis"
-    for r, key in enumerate(Ys.keys()):
-        ax[r].plot(X, Ys[key], label=key, lw=1, color=col[r])
-        if dYs is not None and key in dYs:
-            ax[r].fill_between(
-                X, Ys[key] - dYs[key], Ys[key] + dYs[key], color=col[r],
-                alpha=0.5)
+        nrows=len(subs), figsize=(4, (4 * len(subs))), sharex=True, dpi=150)
+    ax = ([ax] if len(subs) == 1 else ax)
+    # n_colors = Ys.shape[1] // len(subs)
+    Ys = Ys.reindex(sorted(Ys.columns), axis=1)
+    columns = Ys.columns.values.tolist()
+    X = Ys.index.values
+    for r, subKey in enumerate(subs):
+        sns.despine(ax=ax[r], top=True, right=True, left=False, bottom=True)
+        subset = [c for c in columns if subKey in c]
+        newCols = {c: formatTitle(titles[0], c) for c in subset}
+        Ys[subset].copy().rename(columns=newCols).plot(
+            kind="line", ax=ax[r], xlabel=titles[1], ylabel=titles[2],
+            colormap="gist_rainbow", sort_columns=True)
+        if dYs is not None:
+            for c in [c for c in dYs.columns.values.tolist() if c in subset]:
+                ax[r].fill_between(
+                    X, Ys[c] - dYs[c], Ys[c] + dYs[c], linewidth=0, alpha=0.5,
+                    color=ax[r].lines[subset.index(c)].get_color())
 
-        if ax[r].get_ylim()[0] <= 0 <= ax[r].get_ylim()[-1]:
-            ax[r].hlines(y=0, xmin=X[0], xmax=X[-1], lw=1, color='black')
+        y_max = np.abs(ax[r].get_ylim()).max()
+        # ax[r].vlines(x=0, ymin=-y_max, ymax=y_max, lw=1, color='black')
+        ax[r].hlines(y=0, xmin=X[0], xmax=X[-1], lw=1, color='black')
         if light is not None:
-            plt.axvspan(light[0], light[1], color="blue", lw=1, alpha=0.1)
+            ax[r].axvspan(light[0], light[1], color="blue", lw=0, alpha=0.1)
 
-        ax[r].set_xlabel(titles[1])
+        # ax[r].set_xlabel(titles[1])
         ax[r].set_ylabel(titles[2])
-        ax[r].legend(loc="upper right", frameon=False)
         ax[r].locator_params(axis="x", nbins=10)
-        ax[r].locator_params(axis="y", nbins=11)
+        ax[r].locator_params(axis="y", nbins=9)
         ax[r].set_xlim(left=float(X[0]), right=float(X[-1]))
+        ax[r].set_ylim(bottom=-y_max, top=y_max)
+        ax[r].legend(
+            loc="upper right", frameon=False, bbox_to_anchor=(1, 1))
 
     fig.suptitle(titles[0], fontsize=10)
+    plt.tight_layout()
+    buffer = io.BytesIO()
+    fig.savefig(buffer)
+    buffer.seek(0)
+    figure = Image.open(buffer)
+    plt.close("all")
+    return figure
+
+
+def boxPlot(
+        data, catCol, valCol, title, rowCol=None, hueCol=None, bootstrap=1000,
+        ci=0.95):
+    plt.rcParams["font.size"] = "10"
+    height = data[catCol].unique().size * 1
+    height = (
+        height * data[hueCol].unique().size if hueCol is not None else height)
+    fg = sns.catplot(
+        x=valCol, y=catCol, hue=hueCol, row=rowCol, data=data, orient="h",
+        height=height, aspect=float(5 / height), palette="flare",
+        order=sorted(data[catCol].unique().flatten().tolist()),
+        hue_order=(
+            sorted(data[hueCol].unique().flatten().tolist())
+            if hueCol is not None else None),
+        row_order=(
+            sorted(data[rowCol].unique().flatten().tolist())
+            if rowCol is not None else None),
+        legend=True, legend_out=True, facet_kws=dict(despine=True),
+        kind="bar", capsize=.2, ci=ci, n_boot=bootstrap, sharex=False)
+
+    for ax in fg.axes.flatten():
+
+        ax.set_yticklabels(
+            ax.get_yticklabels(), rotation=45, verticalalignment='top')
+        ax.locator_params(axis="x", nbins=10)
+        title = ax.get_title()
+        ax.set_xlabel(title)
+        ax.set_title("")
+        sns.despine(ax=ax, top=True, right=True, left=True, bottom=False)
+        ax.axvline(x=0, lw=2, color='black')
+        ax.set_xlim(left=min(ax.get_xlim()), right=max(ax.get_xlim()) * 1.25)
+
+    fig = plt.gcf()
+    fig.suptitle(title, fontsize=10)
     plt.tight_layout()
     buffer = io.BytesIO()
     fig.savefig(buffer)

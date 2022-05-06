@@ -214,3 +214,36 @@ def splitTZCYXArray(array, lengths, axis):
         arrays = arrays + [array[tuple(currentSlice)]]
 
     return arrays
+
+
+def binStack(array, bins, id0=1):
+    """
+    Bin a hyperstack according to a known list of frames per bin
+
+    @param array: input array to be binned, hyperstack or otherwise.
+        Binning occurs along the first axis
+    @type array: numpy.ndarray
+    @param bins: list of frames in each bin. Each index in bins is a
+        sublist of all frames that should be averaged to yield the index-th
+        frame in the binned image. ie the following list of lists:
+        [[1, 5, 8, 9]
+         [2, 3, 6, 10]
+         [4, 7, 11]]
+        indicates that there are 3 binned frames from an imaging array with
+        11 unbinned frame. The first binned image in this example includes all
+        frames in bins[0]: 1, 5, 8, and 9
+    @type bins: list
+    @param id0: index of first frame according to frame numbering scheme in bins
+        id0=0 indicates frames are 0-indexes (first frame at index 0)
+        id0=1 indicates frames are 1-indexed (first frame at ndex 1)
+    @type id0: int
+
+    @return: binned image of same shape as input array except in axis 0
+    @rtype: numpy.ndarray
+    """
+    # form a list of binned images with list comprehension
+    bins = [set([min(x, array.shape[0] - id0) for x in b]) for b in bins]
+    binned = [np.mean(np.array(
+        [array[t] for t in bin]), axis=0) for bin in bins]
+    binned = np.array(binned, dtype=array.dtype)
+    return binned
