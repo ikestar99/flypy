@@ -102,13 +102,13 @@ def lineGraph(Ys, titles, dYs=None, light=None, subs=[""]):
     @param Ys: dictionary of {indicator: y-coordinates of specific indicator}
         pairings for all indicators to be plotted. Y-coordinates should be
         stored in numpy arrays
-    @type Ys: dict
+    @type Ys: pd.DataFrame
     @param titles: [figure title, x-axis label, y-axis label]
     @type titles: iterable
     @param dYs: dictionary of {indicator: std or variance} pairings for all
         indicators to be plotted. Y-coordinates should be stored in numpy
         arrays
-    @type dYs: dict
+    @type dYs: pd.DataFrame
     @param light: [stimulus on time, stimulus off time]
     @type light: list
     @param subs:
@@ -118,7 +118,7 @@ def lineGraph(Ys, titles, dYs=None, light=None, subs=[""]):
     converted into an image for performant use and easy storage
     @rtype: PIL.Image
     """
-    plt.rcParams["font.size"] = "8"
+    plt.rcParams["font.size"] = "10"
     # sns.set_style("darkgrid")
     fig, ax = plt.subplots(
         nrows=len(subs), figsize=(4, (4 * len(subs))), sharex=True, dpi=150)
@@ -128,7 +128,6 @@ def lineGraph(Ys, titles, dYs=None, light=None, subs=[""]):
     columns = Ys.columns.values.tolist()
     X = Ys.index.values
     for r, subKey in enumerate(subs):
-        sns.despine(ax=ax[r], top=True, right=True, left=False, bottom=True)
         subset = [c for c in columns if subKey in c]
         newCols = {c: formatTitle(titles[0], c) for c in subset}
         Ys[subset].copy().rename(columns=newCols).plot(
@@ -141,19 +140,20 @@ def lineGraph(Ys, titles, dYs=None, light=None, subs=[""]):
                     color=ax[r].lines[subset.index(c)].get_color())
 
         y_max = np.abs(ax[r].get_ylim()).max()
-        # ax[r].vlines(x=0, ymin=-y_max, ymax=y_max, lw=1, color='black')
-        ax[r].hlines(y=0, xmin=X[0], xmax=X[-1], lw=1, color='black')
         if light is not None:
             ax[r].axvspan(light[0], light[1], color="blue", lw=0, alpha=0.1)
 
-        # ax[r].set_xlabel(titles[1])
+        sns.despine(ax=ax[r], top=True, right=True, left=False, bottom=False)
+        ax[r].spines['bottom'].set_position(('data', 0))
+        ax[r].spines['left'].set_linewidth(2)
+        ax[r].spines['bottom'].set_linewidth(2)
         ax[r].set_ylabel(titles[2])
         ax[r].locator_params(axis="x", nbins=10)
         ax[r].locator_params(axis="y", nbins=9)
-        ax[r].set_xlim(left=float(X[0]), right=float(X[-1]))
+        ax[r].set_xlim(left=np.min(X), right=np.max(X) * 1.25)
         ax[r].set_ylim(bottom=-y_max, top=y_max)
         ax[r].legend(
-            loc="upper right", frameon=False, bbox_to_anchor=(1, 1))
+            loc="center right", frameon=False, bbox_to_anchor=(1, 1))
 
     fig.suptitle(titles[0], fontsize=10)
     plt.tight_layout()
@@ -165,7 +165,7 @@ def lineGraph(Ys, titles, dYs=None, light=None, subs=[""]):
     return figure
 
 
-def boxPlot(
+def barPlot(
         data, catCol, valCol, title, rowCol=None, hueCol=None, bootstrap=1000,
         ci=0.95):
     plt.rcParams["font.size"] = "10"
@@ -186,15 +186,16 @@ def boxPlot(
         kind="bar", capsize=.2, ci=ci, n_boot=bootstrap, sharex=False)
 
     for ax in fg.axes.flatten():
-
-        ax.set_yticklabels(
-            ax.get_yticklabels(), rotation=45, verticalalignment='top')
-        ax.locator_params(axis="x", nbins=10)
+        sns.despine(ax=ax, top=True, right=True, left=False, bottom=False)
+        ax.spines['left'].set_position(('data', 0))
+        ax.spines['left'].set_linewidth(2)
+        ax.spines['bottom'].set_linewidth(2)
         title = ax.get_title()
         ax.set_xlabel(title)
         ax.set_title("")
-        sns.despine(ax=ax, top=True, right=True, left=True, bottom=False)
-        ax.axvline(x=0, lw=2, color='black')
+        ax.locator_params(axis="x", nbins=10)
+        ax.set_yticklabels(
+            ax.get_yticklabels(), rotation=45, verticalalignment='top')
         ax.set_xlim(left=min(ax.get_xlim()), right=max(ax.get_xlim()) * 1.25)
 
     fig = plt.gcf()

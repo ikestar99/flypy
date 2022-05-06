@@ -14,7 +14,7 @@ from ..utils.filepath import Filepath
 from ..utils.pipeutils import smooth
 from ..utils.hyperstack import (
     saveTZCYXTiff, loadTZCYXTiff, savePillowArray, binStack)
-from ..utils.visualization import lineGraph, boxPlot
+from ..utils.visualization import lineGraph, barPlot
 from ..utils.csvcolumns import RESP, MAIN
 from ..pipeline.response import Response
 from ..pipeline.liffile import getLifImage
@@ -314,7 +314,7 @@ def plotAverageResponses(directory):
     code block equivalent to former "plot average responses" portion of
     automated endopy pipeline
     """
-    if not directory.indFile or not directory.frameFile or directory.avgFig:
+    if not directory.indFile or not directory.frameFile: # or directory.avgFig:
         return
 
     dfit = pd.read_csv(directory.indFile)
@@ -386,7 +386,7 @@ def plotAggregateIntegration(directory):
 
     data = pd.read_csv(directory.totIntFile, usecols=[
         RESP["reg"], RESP["chn"], RESP["int"]])
-    figure = boxPlot(
+    figure = barPlot(
         data, catCol=RESP["reg"], valCol=RESP["int"], hueCol=RESP["chn"],
         title="Integrated Responses")
     savePillowArray(str(directory.totIntFig), [figure])
@@ -401,7 +401,7 @@ def plotAggregateCorrelation(directory):
     data = data.melt(
         id_vars=[RESP["reg"]], value_vars=[RESP["prv"], RESP["ppv"]],
         var_name="statistic", value_name="value")
-    figure = boxPlot(
+    figure = barPlot(
         data, catCol=RESP["reg"], valCol="value", rowCol="statistic",
         title="Correlated Responses")
     savePillowArray(str(directory.totCorFig), [figure])
