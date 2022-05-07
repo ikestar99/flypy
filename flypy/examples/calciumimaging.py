@@ -75,11 +75,10 @@ def calciumImagingPipeline(dataDirectory, imagingCSVReader):
 
 def responseAggregation(dataDirectory, imagingCSVReader):
     print("Aggregating responses")
-    for z in tqdm(imagingCSVReader.filterColumns(
-            MAIN["cel"], MAIN["stn"], unique=True)):
+    for s in tqdm(imagingCSVReader.filterColumns(MAIN["stn"], unique=True)):
         directories = list()
         rowDicts = list()
-        for rowDict in imagingCSVReader.filterRows(z):
+        for rowDict in imagingCSVReader.filterRows(s):
             directory = _getDirectory(dataDirectory, rowDict)
             mapRFCenters(
                 directory, ref=directory.channels[int(rowDict[MAIN["ref"]])])
@@ -87,28 +86,18 @@ def responseAggregation(dataDirectory, imagingCSVReader):
             rowDicts += [rowDict]
 
         filterMappedResponses(directories, rowDicts)
-
-
-def integrateAndCorrelate(dataDirectory, imagingCSVReader):
-    print("Integrating and correlating responses")
-    for z in tqdm(imagingCSVReader.filterColumns(
-            MAIN["cel"], MAIN["stn"], unique=True)):
-        rowDicts = [r for r in imagingCSVReader.filterRows(z)]
-        directories = [_getDirectory(dataDirectory, r) for r in rowDicts]
         integrateResponses(directories, rowDicts)
         correlateResponses(directories, rowDicts)
 
 
 def plotAggregation(dataDirectory, imagingCSVReader):
     print("Generating plots")
-    for z in tqdm(imagingCSVReader.filterColumns(
-            MAIN["cel"], MAIN["stn"], unique=True)):
+    for s in tqdm(imagingCSVReader.filterColumns(MAIN["stn"], unique=True)):
         directory = None
-        for rowDict in imagingCSVReader.filterRows(z):
+        for rowDict in imagingCSVReader.filterRows(s):
             directory = _getDirectory(dataDirectory, rowDict)
             plotAverageResponses(directory)
 
         if directory is not None:
             plotAggregateResponses(directory)
-            plotAggregateIntegration(directory)
-            plotAggregateCorrelation(directory)
+            plotAggregateStatistics(directory)

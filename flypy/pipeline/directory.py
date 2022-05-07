@@ -68,28 +68,20 @@ class Directory(object):
         self.maskFiles = Filepath(self.maskDir, "*", ext="tif").search()
 
         self.totMeasFile = Filepath(
-            self.totMeasDir, "{}-{}-measurements".format(
-                cell, stimName), ext="csv")
+            self.totMeasDir, "{}-measurements".format(stimName), ext="csv")
         self.totIntFile = Filepath(
-            self.totMeasDir, "{}-{}-integrated".format(
-                cell, stimName), ext="csv")
+            self.totMeasDir, "{}-integrated".format(stimName), ext="csv")
         self.totCorFile = Filepath(
-            self.totMeasDir, "{}-{}-correlations".format(
-                cell, stimName), ext="csv")
+            self.totMeasDir, "{}-correlations".format(stimName), ext="csv")
 
         self.avgFig = Filepath(
             self.figDir, "{}-average responses".format(stimName), ext="tif")
 
         self.totAvgFig = Filepath(
-            self.totFigDir, "{}-{}-average responses".format(
-                cell, stimName), ext="tif")
-        self.totIntFig = Filepath(
-            self.totFigDir, "{}-{}-integrated responses".format(
-                cell, stimName), ext="tif")
-        self.totCorFig = Filepath(
-            self.totFigDir, "{}-{}-correlated responses".format(
-                cell, stimName), ext="tif")
-
+            self.totFigDir, "{}-average responses".format(stimName), ext="tif")
+        self.totStatFig = Filepath(
+            self.totFigDir, "{}-statistics".format(stimName),
+            ext="tif")
 
     @staticmethod
     def stimDate(date):
