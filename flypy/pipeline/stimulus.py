@@ -147,6 +147,9 @@ class Stimulus(CSVReader):
         OFF_indices = list(np.where(np.diff(stim_state) == -1) + 1)
         return ON_indices, OFF_indices
 
+    def customTicks(self, bins, end=False):
+        return np.linspace(0, self.epochTime, num=bins, endpoint=end)
+
     def binFrames(self, scalar):
         """
         Extract an ordering of frames needed to bin a corresponding image

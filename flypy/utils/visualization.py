@@ -28,7 +28,7 @@ def getColors(n, palatte="viridis"):
 
 
 def getFigAndAxes(rows=1, cols=1, sharex=False, sharey=False, **kwargs):
-    plt.rcParams["font.size"] = "10"
+    plt.rcParams["font.size"] = "15"
     fig, axes = plt.subplots(
         nrows=rows, ncols=cols, squeeze=False, figsize=(4 * cols, 4 * rows),
         dpi=150, sharex=sharex, sharey=sharey, **kwargs)
@@ -94,9 +94,24 @@ def addVerticalAxTitle(ax, title):
         transform=ax.transAxes)
 
 
-def addAxisTitles(ax, xtitle=None, ytitle=None):
-    (ax.set_xlabel(xtitle) if xtitle is not None else None)
-    (ax.set_ylabel(ytitle) if ytitle is not None else None)
+def addAxisLabels(ax, xlabel=None, ylabel=None):
+    (ax.set_xlabel(xlabel) if xlabel is not None else None)
+    (ax.set_ylabel(ylabel) if ylabel is not None else None)
+
+
+def specifyAxisTicks(ax, xticks=None, yticks=None):
+    (ax.xaxis.set_ticks(xticks) if xticks is not None else None)
+    (ax.yaxis.set_ticks(yticks) if yticks is not None else None)
+
+
+def removeAxisLabels(ax, xlabel=False, ylabel=False):
+    (ax.axes.xaxis.set_visible(False) if xlabel else None)
+    (ax.axes.yaxis.set_visible(False) if ylabel else None)
+
+
+def addLogAxis(ax, xlog=False, ylog=False):
+    (ax.set_xscale('log') if xlog else None)
+    (ax.set_yscale('log') if ylog else None)
 
 
 def addLegend(ax):
@@ -107,38 +122,50 @@ def shadeVerticalBox(ax, start, stop, alpha=0.05):
     ax.axvspan(start, stop, color="gray", lw=0, alpha=alpha)
 
 
+def annotatePatches(ax):
+    for p in ax.patches:
+        num = '{:.1e}'.format(p.get_height())
+        num = (num[:3] if "e+00" in num else num)
+        ax.annotate(
+            num, (p.get_x() + (p.get_width() / 2), 0.9),
+            ha='center', va='center')
+
+
 def linePlot(
         ax, data, yCol, xCol=None, hCol=None, hueDict=None, ci=95, bootN=1000,
-        color=None, lw=2, raw=False):
+        color=None, lw=2, raw=False, order=None):
     sns.lineplot(
         x=xCol, y=yCol, hue=hCol, data=data, palette=hueDict, ci=ci,
-        n_boot=bootN, ax=ax, color=color, linewidth=lw)
+        n_boot=bootN, ax=ax, color=color, linewidth=lw, hue_order=order)
     if raw:
         sns.lineplot(
             x=xCol, y=yCol, hue=hCol, data=data, palette=hueDict, ci=ci,
             n_boot=bootN, ax=ax, color=color, linewidth=lw, estimator=None,
-            alpha=0.2, legend=None)
+            alpha=0.2, legend=None, hue_order=order)
 
 
 def boxPlot(
         ax, data, yCol, cCol=None, hCol=None, hueDict=None, color=None, lw=2,
-        raw=False, ori="v"):
+        raw=False, ori="v", order=None):
     sns.boxplot(
         x=cCol, y=yCol, hue=hCol, data=data, palette=hueDict, ax=ax,
-        color=color, orient=ori, linewidth=lw)
+        color=color, orient=ori, linewidth=lw, hue_order=order)
     if raw:
-        data = (data.sample(n=50, axis=0) if data.shape[0] > 50 else data)
+        data = (data.sample(n=50, axis=0) if data.shape[0] > 200 else data)
         sns.swarmplot(
-            x=cCol, y=yCol, hue=hCol, data=data, ax=ax, color="k", orient=ori)
+            x=cCol, y=yCol, hue=hCol, data=data, ax=ax, color="k", orient=ori,
+            size=3)
 
 
 def barPlot(
         ax, data, yCol, cCol=None, hCol=None, hueDict=None, ci=95, bootN=1000,
-        color=None, lw=2, raw=False, ori="v"):
+        color=None, lw=2, raw=False, ori="v", order=None):
     sns.barplot(
         x=cCol, y=yCol, hue=hCol, data=data, palette=hueDict, ci=ci,
-        n_boot=bootN, ax=ax, color=color, orient=ori, linewidth=lw)
+        n_boot=bootN, ax=ax, color=color, orient=ori, linewidth=lw,
+        capsize=.2, hue_order=order, errcolor="k", edgecolor=".2")
     if raw:
-        data = (data.sample(n=50, axis=0) if data.shape[0] > 50 else data)
+        data = (data.sample(n=50, axis=0) if data.shape[0] > 200 else data)
         sns.swarmplot(
-            x=cCol, y=yCol, hue=hCol, data=data, ax=ax, color="k", orient=ori)
+            x=cCol, y=yCol, hue=hCol, data=data, ax=ax, color="k", orient=ori,
+            size=3)

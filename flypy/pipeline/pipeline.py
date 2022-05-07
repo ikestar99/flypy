@@ -244,11 +244,28 @@ def filterMappedResponses(directories, rowDicts):
         dfn.insert(1, MAIN["fly"], rowDict[MAIN["fly"]])
         dfn.insert(2, MAIN["cel"], rowDict[MAIN["cel"]])
         dfn.insert(3, MAIN["zpl"], rowDict[MAIN["zpl"]])
+        # print(rowDict[MAIN["lay"]], stimulus.epochFrames)
+        # if dfc.shape[1] < 80 or rowDict[MAIN["lay"]] is None:
+        #     continue
+        # print(dfc.shape)
+        # fixed = np.linspace(0, 78, num=stimulus.epochFrames, endpoint=True).astype(
+        #     int).astype(str).tolist()
+        # if len(stimulus.xLabels) != 79:
+        #     dfi = dfi.rename(columns=dict(zip(stimulus.numCols, fixed)))
         dfnt = (
             dfn if dfnt is None else pd.concat(
                 (dfnt, dfn), axis=0, ignore_index=True))
 
     if dfnt is not None:
+        # dfnt[(dfnt[MAIN["cel"]] == "L2 Tm3") & (dfnt[RESP["reg"]] == "M1")][RESP["reg"]] = "M5"
+        # dfnt[(dfnt[MAIN["cel"]] == "L2 Tm3") & (dfnt[RESP["reg"]] == "M5")][MAIN["cel"]] = "Tm3"
+        # dfnt[(dfnt[MAIN["cel"]] == "L2 Tm3") & (dfnt[RESP["reg"]] == "M2")][MAIN["cel"]] = "L2"
+        # dfnt.loc[(dfnt[RESP["reg"]] == "M9-M10"), RESP["reg"]] = "M9 M10"
+        # dfnt.loc[(dfnt[RESP["reg"]] == "M9 10um Thapsigargin"), RESP["reg"]] = "M9 + Tg"
+        # dfnt.loc[(dfnt[RESP["reg"]] == "Lobula 10um Thapsigargin"), RESP["reg"]] = "Lobula + Tg"
+        # cols = [str(x) for x in range(79)]
+        # cons = dfnt.columns.values.tolist()[:11]
+        # dfnt = dfnt[cons + cols]
         dfnt.to_csv(directories[0].totMeasFile, encoding="utf-8", index=False)
 
 
@@ -367,7 +384,7 @@ def plotAggregateResponses(directory):
     dft = dft.rename(
         columns=dict(zip(stimulus.numCols, stimulus.xLabels.astype(str))))
     chn = sorted(dft[RESP["chn"]].unique().tolist())
-    col = dict(RGECO="#E93323", ER210="#6ACE3D", ER150="#4EADEA")
+    col = dict(RGECO="#e93323", ER210="#6ace3d", ER150="#4eadea")
     for x in dft[MAIN["cel"]].unique().tolist():
         dfs = dft[dft[MAIN["cel"]] == x].copy().drop(columns=[MAIN["cel"]])
         dfn = dfc[dfc[MAIN["cel"]] == x].copy().drop(columns=[MAIN["cel"]])
@@ -396,10 +413,16 @@ def plotAggregateResponses(directory):
 
                 if r == 0:
                     addHorizontalAxTitle(axes[r, c], channel)
+                if c > 0:
+                    addAxisLabels(axes[r, c], ylabel="")
+                if r == len(reg) - 1:
+                    specifyAxisTicks(
+                        axes[-1, c], xticks=stimulus.customTicks(
+                            bins=5, end=True))
 
             addVerticalAxTitle(axes[r, -1], region)
 
-        figures += [figToImage(countNs(dfn, x), fig)]
+        figures += [figToImage("", fig)]
 
     savePillowArray(str(directory.totAvgFig), figures)
 
@@ -414,78 +437,59 @@ def plotAggregateStatistics(directory):
         MAIN["cel"], RESP["reg"], RESP["prv"], RESP["ppv"]])
     dfc = dfi[[
         MAIN["cel"], MAIN["dat"], MAIN["fly"], MAIN["zpl"],
-        RESP["roi"]]].copy()
+        RESP["roi"], RESP["reg"]]].copy()
     dfi = dfi[[MAIN["cel"], RESP["reg"], RESP["chn"], RESP["int"]]]
     chn = sorted(dfi[RESP["chn"]].unique().tolist())
-    col = dict(RGECO="#E93323", ER210="#6ACE3D", ER150="#4EADEA")
-    pal = ["#3C0751", "#468E8B"]
+    col = dict(RGECO="#e93323", ER210="#6ace3d", ER150="#4eadea")
+    pal = {RESP["prv"]: "#3c0751", RESP["ppv"]: "#468e8b"}
     for x in dfi[MAIN["cel"]].unique().tolist():
         dfis = dfi[dfi[MAIN["cel"]] == x].copy().drop(columns=[MAIN["cel"]])
         dfps = dfp[dfp[MAIN["cel"]] == x].copy().drop(columns=[MAIN["cel"]])
-        dfn = dfc[dfc[MAIN["cel"]] == x].copy().drop(columns=[MAIN["cel"]])
+        dfcs = dfc[dfc[MAIN["cel"]] == x].copy().drop(columns=[MAIN["cel"]])
         reg = sorted(dfis[RESP["reg"]].unique().tolist())
         fig, axes = getFigAndAxes(rows=len(reg), cols=3)
         for r, region in enumerate(reg):
             dfisr = dfis[dfis[RESP["reg"]] == region].copy().drop(
+                columns=[RESP["reg"]])
+            dfcsr = dfcs[dfcs[RESP["reg"]] == region].copy().drop(
                 columns=[RESP["reg"]])
             if dfisr.empty:
                 [clearAx(axes[r, x]) for x in range(3)]
             else:
                 barPlot(
                     ax=axes[r, 0], data=dfisr, cCol=RESP["chn"],
-                    yCol=RESP["int"], hueDict=col, raw=True)
+                    yCol=RESP["int"], hueDict=col, raw=True, order=sorted(col))
                 dfpsr = dfps[dfps[RESP["reg"]] == region].copy().drop(
-                    columns=[RESP["reg"]])
+                    columns=[RESP["reg"]]).rename(
+                    columns={RESP["prv"]: "R", RESP["ppv"]: "p-value"}).melt(
+                    var_name="statistic", value_name="value")
+                adjustNBins(axes[r, 0])
                 barPlot(
-                    ax=axes[r, 1], data=dfpsr, yCol=RESP["prv"], color=pal[0],
-                    raw=True)
+                    ax=axes[r, 1], data=dfpsr, cCol="statistic", yCol="value",
+                    raw=False, order=["R", "p-value"])
+                annotatePatches(ax=axes[r, 1])
                 resetLimits(axes[r, 1], ys=[-1, 1])
+                fN, zN, rN = countNs(dfcsr)
+                data = pd.DataFrame(dict(flies=[fN], planes=[zN], ROIs=[rN]))
+                data = np.log(data)
+                data = data.melt(var_name="quantity", value_name="log N")
                 barPlot(
-                    ax=axes[r, 2], data=dfpsr, yCol=RESP["ppv"], color=pal[0],
-                    raw=True)
-                resetLimits(axes[r, 1], ys=[0, 1])
+                    ax=axes[r, 2], data=data, cCol="quantity", yCol="log N",
+                    raw=False, ci=None, order=["flies", "planes", "log N"])
                 for a in range(3):
-                    adjustNBins(axes[r, a], xbins=None)
                     redrawAxis(axes[r, a], xaxis=True)
 
             addVerticalAxTitle(axes[r, -1], region)
 
-        addHorizontalAxTitle(axes[0, 0], "Integrated Responses")
-        addHorizontalAxTitle(axes[0, 1], "Pearson's R")
-        addHorizontalAxTitle(axes[0, 1], "Pearson's p")
-        figures += [figToImage(countNs(dfn, x), fig)]
+        addHorizontalAxTitle(axes[0, 0], "integrated responses")
+        addHorizontalAxTitle(axes[0, 1], "pearson's correlation")
+        addHorizontalAxTitle(axes[0, 2], "N")
+        figures += [figToImage("", fig)]
 
     savePillowArray(str(directory.totStatFig), figures)
 
 
-# def plotAggregateIntegration(directory):
-#     if not directory.totIntFile:
-#         return
-#
-#     data = pd.read_csv(directory.totIntFile, usecols=[
-#         RESP["reg"], RESP["chn"], RESP["int"]])
-#     figure = barPlot(
-#         data, catCol=RESP["reg"], valCol=RESP["int"], hueCol=RESP["chn"],
-#         title="Integrated Responses", xLabel="area under response curve (s)")
-#     savePillowArray(str(directory.totIntFig), [figure])
-#
-#
-# def plotAggregateCorrelation(directory):
-#     if not directory.totCorFile:
-#         return
-#
-#     data = pd.read_csv(directory.totCorFile, usecols=[
-#         RESP["reg"], RESP["prv"], RESP["ppv"]])
-#     data = data.melt(
-#         id_vars=[RESP["reg"]], value_vars=[RESP["prv"], RESP["ppv"]],
-#         var_name="statistic", value_name="value")
-#     figure = barPlot(
-#         data, catCol=RESP["reg"], valCol="value", rowCol="statistic",
-#         title="Correlated Responses")
-#     savePillowArray(str(directory.totCorFig), [figure])
-
-
-def countNs(df, cell):
+def countNs(df):
     df = df[[MAIN["dat"], MAIN["fly"], MAIN["zpl"], RESP["roi"]]]
     df = df.drop_duplicates(keep="first")
     rN = df.shape[0]
@@ -493,5 +497,4 @@ def countNs(df, cell):
     zN = df.shape[0]
     df = df.drop(columns=[MAIN["zpl"]]).drop_duplicates(keep="first")
     fN = df.shape[0]
-    print("{} Fly N: {}; ROI N: {}".format(cell, fN, rN))
-    return ""
+    return fN, zN, rN
