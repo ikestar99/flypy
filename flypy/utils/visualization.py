@@ -9,7 +9,6 @@ Created on Fri Apr  9 03:38:05 2021
 
 import io
 import numpy as np
-import pandas as pd
 from PIL import Image
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -34,18 +33,6 @@ def getFigAndAxes(rows=1, cols=1, sharex=False, sharey=False, **kwargs):
         dpi=150, sharex=sharex, sharey=sharey, **kwargs)
     fig.subplots_adjust(top=0.9)
     return fig, axes
-
-
-def figToImage(title="", fig=None):
-    fig = (plt.gcf() if fig is None else fig)
-    plt.tight_layout()
-    fig.suptitle(title, y=.95, fontsize=10)
-    buffer = io.BytesIO()
-    fig.savefig(buffer)
-    buffer.seek(0)
-    figure = Image.open(buffer)
-    plt.close("all")
-    return figure
 
 
 def clearAx(ax):
@@ -169,3 +156,15 @@ def barPlot(
         sns.swarmplot(
             x=cCol, y=yCol, hue=hCol, data=data, ax=ax, color="k", orient=ori,
             size=3)
+
+
+def figToImage(title="", fig=None):
+    fig = (plt.gcf() if fig is None else fig)
+    plt.tight_layout()
+    fig.suptitle(title, y=.95, fontsize=10)
+    buffer = io.BytesIO()
+    fig.savefig(buffer)
+    buffer.seek(0)
+    figure = Image.open(buffer)
+    plt.close("all")
+    return figure

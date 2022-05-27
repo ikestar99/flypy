@@ -1,34 +1,138 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Apr  8 03:04:49 2021
+Created on Wed Jul 22 21:28:00 2020
+
 
 @author: ike
 """
 
-
-import numpy as np
-
 import torch
-
+import torch.nn as nn
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def makePrediction(model, batch, pbar=None):
-    out = model(batch["In"].double().to(DEVICE)).cpu().detach().numpy()
-    if pbar is not None:
-        pbar.update(1)
+class Predictor(nn.Module):
+    cfg = None
+    model = None
+#
+#     def __init__(self, cfg=None):
+#         super(Predictor, self).__init__()
+#
+#         if cfg is not None:
+#             Predictor.cfg = cfg
+#             Predictor.model, _ = getModel(cfg=cfg, load=True)
+#
+#     def predictionLoop(self,):
+#         def cdx(batch):
+#             In = batch["In"].double().to(DEVICE)
+#             out = self.model(In).cpu().detach().numpy()
+#             return out
+#
+#         saveFile = getPath(
+#             loader["Folder"], BasePipeline.predDir, "{} Prediction".format(self.cfg["Name"]),
+#             ext="npy")
+#         if op.isfile(saveFile):
+#             return
+#         elif not op.isdir(saveFile[:saveFile.rindex("/")]):
+#             os.makedirs(saveFile[:saveFile.rindex("/")])
+#
+#         out = np.concatenate([cdx(batch) for batch in loader["Predict"]], axis=0)
+#         out = np.mean(out, axis=0)
+#         out = out + np.amin(out, axis=0)[np.newaxis]
+#         out = out / np.sum(out, axis=0)[np.newaxis]
+#         np.save(saveFile, out)
+#
+#     def predictionLoop(self):
+#         def mitoSegmentation(batch):
+#             fdx = np.reshape(batch["FN"].cpu().detach().numpy(), newshape=-1)
+#             self.triples["Name"] += [self.dset(fdx[x]) for x in range(len(fdx))]
+#             if self.cfg["OutputType"] == "mask":
+#                 if op.isfile(getPath(self.mitoSave, fdx[0])):
+#                     return
+#
+#             In = batch["In"].double().to(DEVICE)
+#             out = self.model(In).cpu().detach().numpy()
+#             out = np.argmax(out, axis=1)
+#             if self.cfg["OutputType"] == "classification":
+#                 out = np.reshape(out, newshape=-1)
+#                 labels = np.array(
+#                     [self.cfg["ClassMap"][str(out[x])] for x in
+#                      range(len(out))])
+#                 self.triples["Prediction"] = (
+#                     out if self.triples["Prediction"] is None else
+#                     np.concatenate((self.triples["Prediction"], labels), axis=0))
+#                 self.triples["Class"] = (
+#                     out if self.triples["Class"] is None else
+#                     np.concatenate((self.triples["Class"], out), axis=0))
+#             else:
+#                 for x in range(out.shape[0]):
+#                     mask = out[x] / max(np.amax(out[x]), 1)
+#                     mask = (mask * 255).astype(np.uint8)
+#                     mask = PIM.fromarray(mask)
+#                     mask.save(
+#                         getPath(self.mitoSave, self.dset(fdx[x])),
+#                         compression="tiff_deflate")
+#
+#         if self.cfg["Dataset"] == "FlyGuys":
+#
+#         else:
+#             self.dset = None
+#             identifier = getName(self.cfg["ImageDir"])
+#             self.mitoSave = getPath(self.cfg["DataDir"], "{} by {}".format(
+#                 identifier, self.cfg["Name"]))
+#             if self.cfg["OutputType"] == "classification":
+#                 self.mitoSave = getPath(self.mitoSave, ext="csv")
+#                 self.triples = dict(Name=[], Prediction=None, Class=None)
+#             else:
+#                 if not op.isdir(self.mitoSave):
+#                     os.makedirs(self.mitoSave)
+#
+#             if self.cfg["OutputType"] == "classification":
+#                 if op.isfile(self.mitoSave):
+#                     return
+#
+#             for item in toPredict(self.cfg):
+#                 loader, self.dset = item["Predict"], item["MitoGuy"]
+#                 break
+#
+#             [mitoSegmentation(batch) for batch in tqdm(loader)]
+#             if self.cfg["OutputType"] == "classification":
+#                 csvSave(self.mitoSave, self.triples)
 
-    # fix this -- should not be averaging across batches
-    return np.mean(out, axis=0)
 
-
-def getAveragePrediction(model, loader, pbar):
-    model.eval(); torch.set_grad_enabled(False)
-    runAvg = np.mean(np.array(
-        [makePrediction(model, batch, pbar) for batch in loader]), axis=0)
-    return runAvg
+# #!/usr/bin/env python3
+# # -*- coding: utf-8 -*-
+# """
+# Created on Thu Apr  8 03:04:49 2021
+#
+# @author: ike
+# """
+#
+#
+# import numpy as np
+#
+# import torch
+#
+#
+# DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+#
+#
+# def makePrediction(model, batch, pbar=None):
+#     out = model(batch["In"].double().to(DEVICE)).cpu().detach().numpy()
+#     if pbar is not None:
+#         pbar.update(1)
+#
+#     # fix this -- should not be averaging across batches
+#     return np.mean(out, axis=0)
+#
+#
+# def getAveragePrediction(model, loader, pbar):
+#     model.eval(); torch.set_grad_enabled(False)
+#     runAvg = np.mean(np.array(
+#         [makePrediction(model, batch, pbar) for batch in loader]), axis=0)
+#     return runAvg
 
 
 # def maskAndCorrelateFolders(cls):
@@ -91,7 +195,7 @@ def getAveragePrediction(model, loader, pbar):
 #     #     if op.isfile(row("bkgTif")):
 #     #         continue
 #     #
-#     #     sys.exit(("Masking with machine learning is still under "
+#     #     sys.exit(("Masking with aitools learning is still under "
 #     #               "development. Please make 'background.tif' and "
 #     #               "ROI mask files for each of your samples and return"))
 #         # BNet1 = np.load(getPath(
@@ -143,4 +247,4 @@ def getAveragePrediction(model, loader, pbar):
 #         #         row("maskDir"), "correlation watershed mask", ext="tif"))
 #
 #     # sys.exit(("Please take a moment to review the masks generated by "
-#     #           "machine learning and update them as necessary"))
+#     #           "aitools learning and update them as necessary"))

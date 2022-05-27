@@ -20,7 +20,7 @@ CSVPATH = "/Users/ike/Documents/Columbia University/Barnhart Lab/Data/Fly Imagin
 
 def __main__():
     imagingCSVReader = csv.CSVReader.fromFile(CSVPATH)
-    imagingCSVReader.dropna(MAIN["dat"], MAIN["ch1"])
+    imagingCSVReader = imagingCSVReader.dropna(MAIN["dat"], MAIN["ch1"])
     # fec.calciumImagingPreparation(DIRECTORY, imagingCSVReader)
     # fec.calciumImagingPipeline(DIRECTORY, imagingCSVReader)
     # fec.responseAggregation(DIRECTORY, imagingCSVReader)

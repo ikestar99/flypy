@@ -7,32 +7,8 @@ Class structure and relative imports from Ike Ogbonna, Barnhart Lab
 @author: ike
 """
 
-import shutil
 import numpy as np
-from glob import glob
 
-from .pathutils import getPath, changeExt, makeParent
-
-
-
-def isInt(string):
-    try:
-        int(string)
-        return True
-    except ValueError:
-        return False
-
-
-def boundInt(num, low, up):
-    num = min((max(num, low)), up)
-    return num
-
-
-def nextFactor(num, div):
-    rem = div - (num % div)
-    num = (0 if rem == div else rem) + num
-    return num
-                
 
 def smooth(x, window_len=5, window="hanning"):
     """smooth the data using a window with requested size.

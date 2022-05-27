@@ -79,10 +79,12 @@ class CSVReader(object):
 
     def empty(self):
         self.dfs = pd.DataFrame(columns=self.dfs.columns)
+        return self
 
     def dropna(self, *args):
         args = [arg for arg in args if arg in self]
-        self.dfs = self.dfs.dropna(axis=0, subset=args)
+        dfs = self.dfs.copy().dropna(axis=0, subset=args)
+        return self.fromDataFrame(dfs)
 
     def save(self, file):
         self.dfs.to_csv(file, encoding="utf-8", index=False)
@@ -91,6 +93,40 @@ class CSVReader(object):
         columns = (
             self.dfs[key].unique() if unique else self.dfs[key].to_numpy())
         return columns.flatten()
+
+    def setColumn(self, key, value):
+        self.dfs[key] = value
+        return self
+
+    def sortColumn(self, *args):
+        keys = [arg for arg in args]
+        self.dfs = self.dfs.sort_values(keys, ascending=True)
+        return self
+
+    def dropDuplicates(self, *args):
+        dfs = self.dfs.copy().drop_duplicates(
+            subset=[arg for arg in args], keep="first")
+        return self.fromDataFrame(dfs)
+
+    def thresholdColumn(self, key, threshold, mode):
+        if mode == "<":
+            dfs = self.dfs[self.dfs[key] < threshold].copy()
+        elif mode == "<=":
+            dfs = self.dfs[self.dfs[key] <= threshold].copy()
+        elif mode == "=":
+            dfs = self.dfs[self.dfs[key] == threshold].copy()
+        elif mode == "!=":
+            dfs = self.dfs[self.dfs[key] != threshold].copy()
+        elif mode == ">":
+            dfs = self.dfs[self.dfs[key] > threshold].copy()
+        elif mode == ">=":
+            dfs = self.dfs[self.dfs[key] >= threshold].copy()
+
+        return self.fromDataFrame(dfs)
+
+    def asarray(self, columns):
+        dfs = self.dfs[columns].copy().to_numpy()
+        return dfs
 
     def filterRows(self, item, unique=False):
         """

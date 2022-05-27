@@ -14,7 +14,7 @@ import torch
 import torch.utils.data as tud
 import torchvision.transforms.functional as ttf
 
-from flypy.utils.hyperstack import loadTZCYXTiff
+from flypy.utils.hyperstack import loadTiffHyperstack
 
 
 class Dataset(tud.Dataset):
@@ -28,7 +28,7 @@ class Dataset(tud.Dataset):
         self.mode = "T"
         self.weights = np.zeros(self.Cout)
         for file in [f for f in hypTifs if op.isfile(f)]:
-            temp = loadTZCYXTiff(file)
+            temp = loadTiffHyperstack(file)
             temp = temp.reshape(-1, *temp.shape[2:])
             dims = temp.shape
             temp = np.unique(temp[:, -1], return_counts=True)
@@ -67,7 +67,7 @@ class Dataset(tud.Dataset):
 
         file, T, Y, X = self.indices[idx]
         Cin, depth, Yin, Xin = self.subSamp
-        sample = loadTZCYXTiff(file)
+        sample = loadTiffHyperstack(file)
         sample = sample.reshape(-1, *sample.shape[2:])
         sample = sample[T:T + depth, :, Y:Y + Yin, X:X + Xin]
         sample = (sample[0] if depth == 1 else sample)

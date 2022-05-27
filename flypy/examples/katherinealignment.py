@@ -12,7 +12,7 @@ import numpy as np
 from ..main import tqdm
 from ..utils.pathutils import *
 from ..utils.hyperstack import (
-    saveTZCYXTiff, concatenateTZCYXArray, splitTZCYXArray)
+    saveTiffHyperstack, concatenateTZCYXArray, splitTZCYXArray)
 from ..pipeline.liffile import loadLifFile, getLifImage
 from ..pipeline.alignment import alignStack
 
@@ -53,9 +53,9 @@ def alignImagesInLIFFile(lifPath, indexes, channel):
     savePath = getPath(saveDir, "LIF Image {} Average".format(
         " ".join([str(i) for i in indexes])), ext="tif")
     average = np.mean(arrays, axis=(0, 1), keepdims=True)
-    saveTZCYXTiff(savePath, average, "TZCYX")
+    saveTiffHyperstack(savePath, average, "TZCYX")
     arrays = splitTZCYXArray(arrays, lengths, axis=0)
     for i, array in enumerate(arrays):
         savePath = getPath(
             saveDir, "LIF Image {}".format(str(indexes[i])), ext="tif")
-        saveTZCYXTiff(savePath, array, "TZCYX")
+        saveTiffHyperstack(savePath, array, "TZCYX")

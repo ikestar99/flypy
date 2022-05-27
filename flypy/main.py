@@ -17,15 +17,15 @@ else:
 #     processLeicaData, trainMachineLearning)  # , useMachineLearning)
 # from .utils.menu import Menu
 # from .utils.pathutils import recursiveGlob, getPath
-# from .machine.dataset import Dataset
-# from .machine.models.endonet import EndoNet
-# from .machine.trainer import Trainer
+# from .aitools.dataset import Dataset
+# from .aitools.models.endonet import EndoNet
+# from .aitools.trainer import Trainer
 #
 #
 # MAINMENU = Menu("Root Menu -- I want to...")
 # MAINMENU["Access leica raw data pipeline"] = [processLeicaData]
-# MAINMENU["Train a machine learning model"] = [trainMachineLearning]
-# MAINMENU["Use a trained machine learning model"] = [useMachineLearning]
+# MAINMENU["Train a aitools learning model"] = [trainMachineLearning]
+# MAINMENU["Use a trained aitools learning model"] = [useMachineLearning]
 
 
 # def userInput():

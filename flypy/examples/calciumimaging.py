@@ -99,5 +99,5 @@ def plotAggregation(dataDirectory, imagingCSVReader):
             plotAverageResponses(directory)
 
         if directory is not None:
-            # plotAggregateResponses(directory)
+            plotAggregateResponses(directory)
             plotAggregateStatistics(directory)

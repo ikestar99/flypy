@@ -29,6 +29,7 @@ tReg = dict(
     rotation=StackReg(StackReg.SCALED_ROTATION),
     affine=StackReg(StackReg.AFFINE),
     bilinear=StackReg(StackReg.BILINEAR))
+ORDER = "TZCYX"
 
 
 def _getTZCYXArray(array, shape):
@@ -51,7 +52,7 @@ def _getTZCYXArray(array, shape):
         array.ndim = 5, array.shape[2] = number of channels per image
     @rtype: numpy.ndarray
     """
-    for i, d in enumerate("TZCYX"):
+    for i, d in enumerate(ORDER):
         if d not in shape:
             """
             if axis d is not in image, add a new axis of length 1 at the
@@ -72,7 +73,7 @@ def _getTZCYXArray(array, shape):
     return array
 
 
-def loadTZCYXTiff(file):
+def loadTiffHyperstack(file):
     """
     Load hyperstack from image.tif file
 
@@ -92,7 +93,7 @@ def loadTZCYXTiff(file):
     return array
 
 
-def loadMultipageTiff(file):
+def loadTiffStack(file):
     """
     Load multipage image.tif file as numpy array
 
@@ -107,7 +108,7 @@ def loadMultipageTiff(file):
     return array
 
 
-def saveTZCYXTiff(file, array, shape, dtype=np.uint8):
+def saveTiffHyperstack(file, array, shape, dtype=np.uint8):
     """
     Save hyperstack as image.tif
 
@@ -129,13 +130,7 @@ def saveTZCYXTiff(file, array, shape, dtype=np.uint8):
     tf.imwrite(file=file, data=array, imagej=True)
 
 
-def savePillowArray(saveFile, pilArray):
-    pilArray[0].save(
-        saveFile, compression="tiff_deflate",
-        save_all=True, append_images=pilArray[1:])
-
-
-def saveMultipageTiff(file, array, mode="L"):
+def saveTiffStack(file, array, mode="L"):
     """
     Save 3D image stack as a compressed multipage tiff
 
@@ -156,6 +151,17 @@ def saveMultipageTiff(file, array, mode="L"):
     array[0].save(
         file, compression="tiff_deflate", save_all=True,
         append_images=array[1:])
+
+
+def savePillowArray(saveFile, pilArray):
+    pilArray[0].save(
+        saveFile, compression="tiff_deflate",
+        save_all=True, append_images=pilArray[1:])
+
+
+def hyperstackToStack(array, axis, value=0):
+    array = (array[value] if axis == 0 else array[:, axis])
+    return array
 
 
 def concatenateTZCYXArray(arrays, axis):

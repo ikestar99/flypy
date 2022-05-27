@@ -175,27 +175,6 @@ class Response(object):
         dfs.insert(5, RESP["nrs"], N)
         return dfs
 
-    # exHead = ["size", "response_number", "epoch_label"]
-    # rfHead = [
-    #     "rmax", "pmax", ("x", "x_std"), ("y", "y_STD"),
-    #     ("amplitude", "amplitude_std"), "mappable?"]
-    #
-    # RESP = dict(
-    #     reg="region",
-    #     roi="ROI",
-    #     szs="sizes",
-    #     chn="channel",
-    #     avg="mean_PI",
-    #     rnm="response_number",
-    #     nrs="response N",
-    #     enm=STIM["enm"],
-    #     rmx="rmax",
-    #     pmx="pmax",
-    #     xst=("x", "x_std"),
-    #     yst=("y", "y_STD"),
-    #     ast=("amplitude", "amplitude_std"),
-    #     map="mappable?")
-
     def mapReceptiveFieldCenters(self, dfa, channel, threshold=2):
         dfa = dfa[dfa[RESP["chn"]] == channel]
         dfa = dfa.sort_values(self.totCols, ascending=True, ignore_index=True)
