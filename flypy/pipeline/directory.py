@@ -7,7 +7,7 @@ Created on Mon March 7 11:41:02 2022
 """
 
 
-from ..utils.filepath import Filepath
+from flypy.pipeline.filepath import Filepath
 
 
 MONTHS = [

@@ -7,121 +7,153 @@ Created on Tue May 25 11:41:02 2021
 """
 
 
-import numpy as np
 import pandas as pd
 
 
-class CSVReader(object):
-    @classmethod
-    def fromFile(cls, file):
-        """
-        Instantiaate CSVReader object
+"""
+Helper functions for loading and modifying data in .csv files using pandas
+backend.
+"""
 
-        @param file: complete file path to imaging settings.csv file
-        @type file: string
-        """
-        # load entire csv file as 2D pandas dataframe
-        reader = CSVReader()
-        reader.dfs = pd.read_csv(file)
-        return reader
 
-    @classmethod
-    def fromDataFrame(cls, dfs):
-        """
-        Instantiaate CSVReader object
+def load_csv(
+        file: str
+):
+    """
+    Load a CSV file into a DataFrame.
 
-        @param dfs: complete file path to imaging settings.csv file
-        @type dfs: string
-        """
-        # load entire csv file as 2D pandas dataframe
-        reader = CSVReader()
-        reader.dfs = dfs
-        return reader
+    Args:
+        file (str): Path to the CSV file.
 
-    def __init__(self):
-        self.dfs = None
-        self.index = 0
+    Returns:
+        pandas.DataFrame: DataFrame containing the loaded CSV data.
 
-    def __len__(self):
-        return self.dfs.shape[0]
+    Examples:
+        >>> test_data = load_csv("data.csv")
+        >>> print(test_data.head())
+           Name  Age  Salary
+        0  John   30   50000
+        1  Emma   25   45000
+        2  Mark   35   60000
+    """
+    data = pd.read_csv(file)
+    return data
 
-    def __contains__(self, key):
-        return key in self.dfs.columns
 
-    def __getitem__(self, idx):
-        item = self.dfs.iloc[idx].to_dict()
-        item = {k: (None if self.isNan(i) else i) for k, i in item.items()}
-        return item
+def save_csv(
+        file: str,
+        dataframe: pd.DataFrame
+):
+    """
+    Save a DataFrame as a CSV file.
 
-    def __setitem__(self, idx, value):
-        for key, item in value.items():
-            self.dfs.loc[idx, key] = item
+    Args:
+        file (str): Path to save the CSV file.
+        dataframe (pandas.DataFrame): DataFrame to be saved.
 
-    def __iter__(self):
-        return self
+    Examples:
+        >>> test_data = pd.DataFrame({
+        ...    "Name": ["John", "Emma", "Mark"],
+        ...    "Age": [30, 25, 35],
+        ...    "Salary": [50000, 45000, 60000]})
+        >>> test_file = "path/to/file.csv"
+        >>> save_csv(test_file, test_data)
+    """
+    dataframe.to_csv(file, encoding="utf-8", index=False)
 
-    def __next__(self):
-        if self.index >= len(self):
-            self.index = 0
-            raise StopIteration
-        else:
-            row = self[self.index]
-            self.index += 1
-            return row
 
-    @staticmethod
-    def isNan(item):
-        value = (True if item is None else False)
-        value = (
-            True if (type(item) == np.float64 and np.isnan(item)) else value)
-        value = (True if str(item) == "nan" else value)
-        return value
+def save_data_as_csv(
+        data,
+        file: str,
+        columns: list = None
+):
+    """
+    Save data as a CSV file.
 
-    def empty(self):
-        self.dfs = pd.DataFrame(columns=self.dfs.columns)
+    Args:
+        data (list, dict, numpy.ndarray, pandas.DataFrane): Data to be saved.
+        columns (list): Ordered column names if not already present in data.
+        file (str): The path to save the CSV file.
 
-    def dropna(self, *args):
-        args = [arg for arg in args if arg in self]
-        self.dfs = self.dfs.dropna(axis=0, subset=args)
+    Examples:
+        >>> test_data = [
+        ...     ["John", 30, 50000],
+        ...     ["Emma", 25, 45000],
+        ...     ["Mark", 35, 60000]]
+        >>> test_columns = ["Name", "Age", "Salary"]
+        >>> test_file = "path/to/file.csv"
+        >>> save_data_as_csv(test_data, test_file, test_columns)
+    """
+    dataframe = pd.DataFrame(data, columns=columns)
+    save_csv(file, dataframe)
 
-    def save(self, file):
-        self.dfs.to_csv(file, encoding="utf-8", index=False)
 
-    def getColumn(self, key, unique=False):
-        columns = (
-            self.dfs[key].unique() if unique else self.dfs[key].to_numpy())
-        return columns.flatten()
+def empty(
+        dataframe: pd.DataFrame
+):
+    """
+    Create an empty DataFrame with identical column structure .
 
-    def filterRows(self, item, unique=False):
-        """
-        Extract all imaging CSV entries that match a patern defined by item
+    Args:
+        dataframe (pandas.DataFrame): DataFrame to use as a template.
 
-        @param item: key: value pairings where keys correspond to column
-            headers in imaging.csv file and values are those desired for a
-            particular use case
-        @type item: dict
+    Returns:
+        pandas.DataFrame: Empty DataFrame with identical columns to the input.
 
-        @return: list of dictionaries where each dictionary corresponds to a
-            row in the imaging.csv file that adheres to the item template
-        @rtype: list
-        """
-        dfs = self.dfs.copy()
-        for key, item in item.items():
-            dfs = dfs[dfs[key] == item]
+    Examples:
+        >>> test_data = pd.DataFrame({
+        ...     "Name": ["John", "Emma", "Mark"],
+        ...     "Age": [30, 25, 35],
+        ...     "Salary": [50000, 45000, 60000]})
+        >>> empty_data = empty(test_data)
+        >>> print(empty_data)
+        Empty DataFrame
+        Columns: [Name, Age, Salary]
+        Index: []
+    """
+    empty_dataframe = pd.DataFrame(columns=dataframe.columns)
+    return empty_dataframe
 
-        dfs = (dfs.drop_duplicates() if unique else dfs)
-        return CSVReader.fromDataFrame(dfs)
 
-    def filterColumns(self, *args, unique=False):
-        """
-        Get all values in column(s) of CSV
+def pattern_match(
+        dataframe: pd.DataFrame,
+        pattern: dict
+):
+    """
+    Filter rows of a DataFrame based on a pattern match.
 
-        @param args: column headers from which to extract unique values
-        @type args: arguments
+    Args:
+        dataframe (pandas.DataFrame): DataFrame to be filtered.
+        pattern (dict): Key-value pairs representing the match criteria. Each
+            key in pattern corresponds to a column in dataframe. The colums are
+            filtered such that every column only contains the value specified
+            by pattern[key]. Column not referenced in pattern are left in
+            place.
 
-        @return: list of dictionaries with all unique {arg: value} combinations
-        @rtype: list
-        """
-        dfs = self.dfs[list(args)].copy()
-        dfs = (dfs.drop_duplicates() if unique else dfs)
-        return CSVReader.fromDataFrame(dfs)
+    Returns:
+        pandas.DataFrame: Filtered DataFrame.
+
+    Examples:
+        # Filter one column
+        >>> test_data = pd.DataFrame({
+        ...     "Name": ["Erin", "Zack", "Mark", "John"],
+        ...     "Age": [30, 25, 35, 30],
+        ...     "Salary": [50000, 55000, 60000, 65000]})
+        >>> test_pattern = {"Age": 30}
+        >>> filtered_data = pattern_match(test_data, test_pattern)
+        >>> print(filtered_data)
+           Name  Age  Salary
+        0  Erin   30   50000
+        3  John   30   65000
+
+        # Filter multiple columns
+        >>> test_pattern = {"Name": "John", "Age": 30}
+        >>> filtered_data = pattern_match(test_data, test_pattern)
+        >>> print(filtered_data)
+           Name  Age  Salary
+        3  John   30   65000
+    """
+    for key, item in pattern.items():
+        dataframe = dataframe[dataframe[key] == item]
+
+    return dataframe

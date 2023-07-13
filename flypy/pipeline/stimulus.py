@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from ..utils.csvreader import CSVReader
-from ..utils.csvcolumns import STIM
+from flypy.pipeline.csvcolumns import STIM
 
 
 class Stimulus(CSVReader):

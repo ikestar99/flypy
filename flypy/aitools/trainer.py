@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader
 
 from ..main import tqdm
 from ..utils.visualization import wait
-from ..utils.pathutils import makeParent
+from ..utils.pathutils import make_parent
 
 
 class Trainer(object):
@@ -54,7 +54,7 @@ class Trainer(object):
             self._makeTrainingPlot()
             return checkpoint["Epoch"] + 1
 
-        makeParent(checkPath)
+        make_parent(checkPath)
         return 0
 
     def _saveCheckpoint(self, checkPath, epoch=None):

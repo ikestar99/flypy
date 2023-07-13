@@ -6,18 +6,15 @@ Created on Mon March 7 11:41:02 2022
 @author: ike
 """
 
-
-import numpy as np
 import pandas as pd
 
-from ..utils.filepath import Filepath
-from ..utils.pipeutils import smooth
+from flypy.pipeline.filepath import Filepath
 from ..utils.hyperstack import (
-    saveTZCYXTiff, loadTZCYXTiff, savePillowArray, binStack)
+    save_hyperstack, load_hyperstack, _save_pil_array, binStack)
 from ..utils.visualization import *
-from ..utils.csvcolumns import RESP, MAIN
-from ..pipeline.response import Response
-from ..pipeline.liffile import getLifImage
+from flypy.pipeline.csvcolumns import RESP, MAIN
+from flypy.pipeline.response import Response
+from flypy.utils.liffile import getLifImage
 from ..pipeline.stimulus import Stimulus
 from ..pipeline.alignment import alignStack
 
@@ -44,7 +41,7 @@ def unpackLIF(lifFile, directory, idx):
 
     # extract image from lifFile object and save
     hyperstack = getLifImage(lifFile, idx=idx)
-    saveTZCYXTiff(directory.imgFile, hyperstack, shape="TZCYX")
+    save_hyperstack(directory.imgFile, hyperstack, shape="TZCYX")
 
 
 def moveStimFiles(directory):
@@ -67,7 +64,7 @@ def alignZPlanes(directories, ref, n=3):
         return
 
     # load each image as hyperstack
-    hyperstacks = [loadTZCYXTiff(d.imgFile) for d in directories]
+    hyperstacks = [load_hyperstack(d.imgFile) for d in directories]
     # record number of frames in each hyperstack
     frames = [h.shape[0] for h in hyperstacks]
     # concatenate all images in sample for cross-stimulus alignment
@@ -82,12 +79,12 @@ def alignZPlanes(directories, ref, n=3):
     frame = 0
     for x, d in enumerate(directories):
         aligned = hyperstack[frame:frame + frames[x]]
-        saveTZCYXTiff(d.imgFile, aligned, "TZCYX")
+        save_hyperstack(d.imgFile, aligned, "TZCYX")
         frame += frames[x]
 
     # create and save average projection of aligned hyperstack
     hyperstack = np.mean(hyperstack, axis=0, keepdims=True)
-    saveTZCYXTiff(directories[0].projFile, hyperstack, "TZCYX")
+    save_hyperstack(directories[0].projFile, hyperstack, "TZCYX")
 
 
 def countFrames(directory):
@@ -100,7 +97,7 @@ def countFrames(directory):
         return
 
     # load stack associated with current row
-    hyperstack = loadTZCYXTiff(directory.imgFile)
+    hyperstack = load_hyperstack(directory.imgFile)
     # instantiate stimulus object from stimulus file, count frames
     stimulus = Stimulus(directory.stimFile, frames=hyperstack.shape[0])
     stimulus.save(directory.frameFile)
@@ -116,26 +113,26 @@ def binWithCountedFrames(directory, scalar=2):
         return
 
     # load stack associated with current row
-    hyperstack = loadTZCYXTiff(directory.imgFile)
+    hyperstack = load_hyperstack(directory.imgFile)
     # instantiate stimulus object from stimulus file, count frames
     stimulus = Stimulus(directory.frameFile, frames=hyperstack.shape[0])
     # extract list if images/bin from stimulus object
     binList, _ = stimulus.binFrames(scalar)
     # bin, and save stack
     hyperstack = binStack(hyperstack, binList)
-    saveTZCYXTiff(directory.binFile, hyperstack, "TZCYX")
+    save_hyperstack(directory.binFile, hyperstack, "TZCYX")
 
 
 def makeMasks(directory, rowDict):
     """
     following code block in for loop will iterate over unpacked samples and
-    generate masks for each stimulus-paired sample using machine learning
+    generate masks for each stimulus-paired sample using aitools learning
     well, it will in theory. At some point this will work... ¯\_(ツ)_/¯
     """
-    # mask = loadTZCYXTiff(directory.projFile)[0, 0, -1]
+    # mask = load_hyperstack(directory.projFile)[0, 0, -1]
     # maskFile = Filepath(directory.maskDir, rowDict[MAIN["lay"]], ext="tif")
     # if not maskFile:
-    #     saveTZCYXTiff(maskFile, mask, shape="YX")
+    #     save_hyperstack(maskFile, mask, shape="YX")
     pass
 
 
@@ -149,18 +146,18 @@ def measureRawResponses(directory):
         return
 
     # load stack associated with current row
-    hyperstack = loadTZCYXTiff(directory.imgFile)
+    hyperstack = load_hyperstack(directory.imgFile)
     # instantiate stimulus object from stimulus file, count frames
     stimulus = Stimulus(directory.frameFile)
     dfrt = None
     dfmt = None
     for maskFile in directory.maskFiles:
-        mask = loadTZCYXTiff(maskFile)[0, 0, 0]
+        mask = load_hyperstack(maskFile)[0, 0, 0]
         response = Response(
             stimulus=stimulus, mask=mask,
             region=Filepath.stabilize(maskFile[-1]),
             reporter_names=directory.channels)
-        saveTZCYXTiff(maskFile, response.labeledMask, shape="YX")
+        save_hyperstack(maskFile, response.labeledMask, shape="YX")
         dfr, dfm = response.measureRawResponses(hyperstack)
         dfrt = (dfr if dfrt is None else pd.concat(
             (dfrt, dfr), axis=0, ignore_index=True))
@@ -367,7 +364,7 @@ def plotAverageResponses(directory):
             Ys=dfa, dYs=dfs, titles=(r, "Time (s)", "ΔF/F"),
             light=(stimulus.onTime, stimulus.offTime), subs=channels)]
 
-    savePillowArray(str(directory.avgFig), figures)
+    _save_pil_array(str(directory.avgFig), figures)
 
 
 def plotAggregateResponses(directory):
@@ -424,7 +421,7 @@ def plotAggregateResponses(directory):
 
         figures += [figToImage("", fig)]
 
-    savePillowArray(str(directory.totAvgFig), figures)
+    _save_pil_array(str(directory.totAvgFig), figures)
 
 
 def plotAggregateStatistics(directory):
@@ -486,7 +483,7 @@ def plotAggregateStatistics(directory):
         addHorizontalAxTitle(axes[0, 2], "N")
         figures += [figToImage("", fig)]
 
-    savePillowArray(str(directory.totStatFig), figures)
+    _save_pil_array(str(directory.totStatFig), figures)
 
 
 def countNs(df):

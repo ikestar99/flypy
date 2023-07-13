@@ -10,114 +10,94 @@ Created on Wed Nov 10 10:09:32 2021
 import numpy as np
 import pandas as pd
 import scipy.stats as scs
-import scipy.ndimage as scn
 import scipy.integrate as sci
 
-from ..utils.csvcolumns import RESP
+from flypy.pipeline.csvcolumns import RESP
 
 
 class Response(object):
-    def __init__(self, stimulus, mask=None, region=None, reporter_names=None):
+    def __init__(
+            self, name, nROI, reporters, data, stimName, stimTime, stimState,
+            stimType, timeStep, drivers=None, units="seconds", **kwargs):
+        self.name = name
+        self.nROI = nROI
+        self.reporters = reporters
+        self.drivers = drivers
+        self.data = data
+        self.stimName = stimName
+        self.stimTime = stimTime
+        self.stimState = stimState
+        self.stimType = stimType
+        self.timeStep = timeStep
+        self.units = units
+        for kwarg, item in kwargs.items():
+            setattr(self, kwarg, item)
+
+        # self.stimulus = stimulus
+        # if mask is not None:
+        #     self.region = region
+        #     self.reporter_names = reporter_names
+        #     self.labeledMask, self.numROIs = self._segment_ROIs(mask)
+        #
+        # self.conCols = [
+        #     RESP["reg"], RESP["roi"], RESP["chn"], RESP["szs"], RESP["avg"]]
+        # self.totCols = self.conCols + [RESP["enm"]]
+
+    def __len__(self):
+        return self.data.shape[-1]
+
+    def __getitem__(self, idx):
+        return self.data[idx]
+
+    def median(self, start=0, stop=-1):
+        return np.median(self.data[start:stop])
+
+    def stimswitch(self):
+        ON_indices = np.where(np.diff(self.stimState) == 1)[0] + 1
+        OFF_indices = np.where(np.diff(self.stimState) == -1)[0] + 1
+        if ON_indices[0] < OFF_indices[0]:
+            return ON_indices, OFF_indices
+        else:
+            return ON_indices, OFF_indices[1:]
+
+    def segment_responses(self, frames_before, frames_after):
         """
-        self: is the instance, __init__ takes the instace 'self' and populates
-        it with variables
-        @param stimulus:
-        @type stimulus: .stimulus.Stimulus
+        points_before is the number of points before ON
+        points_after is the number of points after OFF
         """
-        self.stimulus = stimulus
-        if mask is not None:
-            self.region = region
-            self.reporter_names = reporter_names
-            self.labeledMask, self.numROIs = self._segment_ROIs(mask)
+        ONidxs, OFFidxs = self.stimswitch()
+        ONidxs = ONidxs - frames_before
+        OFFidxs = OFFidxs + frames_after
+        slices = [
+            (on, off) for on, off in zip(ONidxs, OFFidxs)
+            if (on >= 0 and off < len(self) - 1)]
+        data = [self.data[:, s[0]:s[1]] for s in slices]
+        minFrames = min([a.shape[1] for a in data])
+        self.data = np.stack([a[:, :minFrames] for a in data], axis=1)
+        self.stimType = np.array([self.stimType[s[0]] for s in slices])
+        return self.data, self.stimType
 
-        self.conCols = [
-            RESP["reg"], RESP["roi"], RESP["chn"], RESP["szs"], RESP["avg"]]
-        self.totCols = self.conCols + [RESP["enm"]]
-
-    @staticmethod
-    def _segment_ROIs(mask):
-        """
-        Label all ROIs in a given mask with a unique integer value
-
-        @param mask: integer mask array on which to perform labeling
-        @type mask: numpy.ndarray
-
-        @return: mask array with all unique non-zero ROIs labeled with a unique
-            integer
-
-            second returned value is number of ROIs labeled
-        @rtype: numpy.ndarray, int
-        """
-        labeledMask, regions = scn.label(mask)
-        return labeledMask, regions
-
-    @staticmethod
-    def _generate_ROI_mask(mask, region):
-        return (mask == region).astype(int)
-
-    @staticmethod
-    def _measureROIValues(rawstack, mask):
-        """
-        Compute mean pixel intensity in masked region of each image in a stack
-        or hyperstack
-
-        @param hyperstack: input array of images on which to extract mean value
-            of masked region, hyperstack or otherwise. Should correspond to a
-            single ROI
-        @type hyperstack: numpy.ndarray
-        @param mask: 2D mask of region within image from which to compute
-            mean
-        @type mask: numpy.ndarray
-
-        @return: array of same shape as input array with the omission of the
-            last two axes corresponding to YX dimensions, which have been
-            collapsed into a single integer
-        @rtype: numpy.ndarray
-        """
-        mask = (mask.astype(int) > 0).astype(float)
-        ROISize = np.sum(mask)
-        while mask.ndim < rawstack.ndim:
-            mask = mask[np.newaxis]
-
-        maskedArray = rawstack * mask
-        maskedArray = np.sum(maskedArray, axis=(-2, -1)).astype(float)
-        maskedArray = (maskedArray / ROISize).astype(float)
-        return maskedArray
-
-    @staticmethod
-    def _subtractBackground(rawstack, background):
-        """
-        Compute mean pixel intensity in background region of each image in a
-        stack or hyperstack and subtract each image-specific value from all
-        pixels in the corresponding image
-
-        @param rawstack: input array of images on which to perform background
-            correction, hyperstack or otherwise
-        @type rawstack: numpy.ndarray
-        @param background: 2D mask of region within image from which to compute
-            background
-        @type background: numpy.ndarray
-
-        @return: array of same shape as input array with the average background
-            pixel intensity of each 2D image subtracted from all other pixels
-            within the image
-        @rtype: numpy.ndarray
-        """
-        background = (background > 0).astype(int)
-        background = Response._measureROIValues(rawstack, background)
-        background = background[..., np.newaxis, np.newaxis]
-        rawstack = rawstack - background
-        return rawstack
-
-    def _dff(self, dfs, baseline_start, baseline_stop):
+    def measure_dff(self, baseline_start, baseline_stop):
         """get df/f"""
-        responses = dfs[self.stimulus.numCols].copy().to_numpy()
         baseline = np.mean(
-            responses[:, int(baseline_start):int(baseline_stop)], axis=-1)
-        baseline = baseline[:, np.newaxis]
-        responses = (responses - baseline) / baseline
-        dfs[self.stimulus.numCols] = responses
-        return dfs
+            self.data[..., int(baseline_start):int(baseline_stop)], axis=-1)
+        baseline = baseline[..., np.newaxis]
+        dff = (self.data - baseline) / baseline
+        return dff
+
+    def measure_average_dff(self, epoch_length):
+        # b = self.baseline_end
+        A = []
+        for stim_type in range(1, np.max(self.stimType) + 1, 1):
+            r = []
+            for dff, st in zip(self.dff, self.stim_type_ind):
+                if st == stim_type:
+                    r.append(dff[:epoch_length])
+            R = np.asarray(r)
+            A.append(list(np.average(R, axis=0)))
+
+        self.average_dff = A
+        return A
 
     def _dropFrames(self, dfs, start, stop):
         responses = dfs[self.stimulus.numCols].copy().to_numpy()

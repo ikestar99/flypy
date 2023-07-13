@@ -9,7 +9,6 @@ Created on Fri Apr  9 03:38:05 2021
 
 import io
 import numpy as np
-import pandas as pd
 from PIL import Image
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -30,22 +29,10 @@ def getColors(n, palatte="viridis"):
 def getFigAndAxes(rows=1, cols=1, sharex=False, sharey=False, **kwargs):
     plt.rcParams["font.size"] = "15"
     fig, axes = plt.subplots(
-        nrows=rows, ncols=cols, squeeze=False, figsize=(4 * cols, 4 * rows),
+        nrows=rows, ncols=cols, squeeze=False, figsize=(6 * cols, 4 * rows),
         dpi=150, sharex=sharex, sharey=sharey, **kwargs)
     fig.subplots_adjust(top=0.9)
     return fig, axes
-
-
-def figToImage(title="", fig=None):
-    fig = (plt.gcf() if fig is None else fig)
-    plt.tight_layout()
-    fig.suptitle(title, y=.95, fontsize=10)
-    buffer = io.BytesIO()
-    fig.savefig(buffer)
-    buffer.seek(0)
-    figure = Image.open(buffer)
-    plt.close("all")
-    return figure
 
 
 def clearAx(ax):
@@ -132,16 +119,18 @@ def annotatePatches(ax):
 
 
 def linePlot(
-        ax, data, yCol, xCol=None, hCol=None, hueDict=None, ci=95, bootN=1000,
-        color=None, lw=2, raw=False, order=None):
+        ax, data, yCol=None, xCol=None, hCol=None, hueDict=None, bootN=10,
+        color=None, lw=2, raw=False, order=None, **kwargs):
     sns.lineplot(
-        x=xCol, y=yCol, hue=hCol, data=data, palette=hueDict, ci=ci,
-        n_boot=bootN, ax=ax, color=color, linewidth=lw, hue_order=order)
+        x=xCol, y=yCol, hue=hCol, data=data, palette=hueDict, n_boot=bootN,
+        ax=ax, color=color, linewidth=lw,
+        hue_order=order, **kwargs)
+    print("here")
     if raw:
         sns.lineplot(
-            x=xCol, y=yCol, hue=hCol, data=data, palette=hueDict, ci=ci,
+            x=xCol, y=yCol, hue=hCol, data=data, palette=hueDict,
             n_boot=bootN, ax=ax, color=color, linewidth=lw, estimator=None,
-            alpha=0.2, legend=None, hue_order=order)
+            alpha=0.2, hue_order=order, **kwargs)
 
 
 def boxPlot(
@@ -169,3 +158,21 @@ def barPlot(
         sns.swarmplot(
             x=cCol, y=yCol, hue=hCol, data=data, ax=ax, color="k", orient=ori,
             size=3)
+
+
+def heatmap(
+        ax, data, vmin, vmax, center, **kwargs):
+    sns.heatmap(
+        ax=ax, data=data, vmin=vmin, vmax=vmax, center=center, **kwargs)
+
+
+def figToImage(title="", fig=None):
+    fig = (plt.gcf() if fig is None else fig)
+    plt.tight_layout()
+    fig.suptitle(title, y=.95, fontsize=10)
+    buffer = io.BytesIO()
+    fig.savefig(buffer)
+    buffer.seek(0)
+    figure = Image.open(buffer)
+    plt.close("all")
+    return figure
