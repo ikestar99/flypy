@@ -24,7 +24,7 @@ def knight_lab_two_photon_analysis():
     stim_stop = 25
     act_thresh = 1
     inhib_thresh = -0.5
-    label_names = ["Inhibited Cells", "Nada", "Activated Cells"]
+    group_names = ["Inhibited Cells", "Nada", "Activated Cells"]
 
     total_traces = np.load(get_path(directory, "F", ext="npy"))
     neuropil_traces = np.load(get_path(directory, "Fneu", ext="npy"))
@@ -42,18 +42,24 @@ def knight_lab_two_photon_analysis():
         stop=stim_stop * 60 * frequency,
         active_threshold=act_thresh,
         inhibit_threshold=inhib_thresh)
-    # clustering_labels, clustering_inertias = process_and_cluster_raw_data(
-    #     data=data,
-    #     groups=group_labels,
-    #     max_clusters=10,
-    #     model="timeserieskmeans",
-    #     smooth_n=5,
-    #     n_clusters=2,
-    #     max_iter=10,
-    #     n_init=2,
-    #     random_state=0)
+    cluster_labels, _ = process_and_cluster_processed_data(
+        data=data,
+        group_labels=group_labels,
+        max_clusters=10,
+        model="timeserieskmeans",
+        smooth_n=5,
+        n_clusters=2,
+        max_iter=10,
+        n_init=2,
+        random_state=0)
     times = np.arange(data.shape[-1]) / (60 * frequency)
-    figure = plot_processed_data(data, group_labels, label_names, times, 50)
+    figure = plot_processed_data(
+        data=data,
+        group_labels=group_labels,
+        group_names=group_names,
+        cluster_labels=cluster_labels,
+        X_ticks=times,
+        smooth_n=50)
     test_save = "/Users/ike/Desktop/test/test_image.tif"
     figure.save(test_save, compression="tiff_deflate")
 
