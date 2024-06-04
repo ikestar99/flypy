@@ -50,7 +50,7 @@ def normalize(data):
 
 
 def cluster_time_series(data, model, **kwargs):
-    data = tsp.TimeSeriesScalerMeanVariance.fit_transform(data)
+    data = tsp.TimeSeriesScalerMeanVariance().fit_transform(data)
     model = MODELS[model](**kwargs)
     model.fit(data)
     return model

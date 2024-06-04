@@ -16,10 +16,10 @@ with open("README.md", "r") as f:
 
 setuptools.setup(
     name="flypy",
-    version="0.0.1",
-    author="Ikechukwu Ogbonna",
-    author_email="ieo2105@columbia.edu",
-    description="Neural networks to segment Drosophila neurons",
+    version="0.1.0",
+    author="Ike Ogbonna",
+    author_email="iogbonna@ucsf.edu",
+    description="Useful functions and pipelines for lab data analysis",
     long_description=long_description,
     long_description_content_type='ext/markdown',
     include_package_data=True,
@@ -29,10 +29,4 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    python_requires='>=3.6',
-    install_requires=[
-
-        "pystackreg>=0.2.5",
-        "readlif>=0.6.1"
-    ]
-)
+    python_requires='>=3.6')

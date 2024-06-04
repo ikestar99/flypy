@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Fri Apr  9 03:38:05 2021
+Created on Fri Apr 9 03:38:05 2021
 
 @author: ike
 """
@@ -12,6 +12,12 @@ import numpy as np
 from PIL import Image
 import seaborn as sns
 import matplotlib.pyplot as plt
+
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.colors import ListedColormap
+
+
+sns.set_theme(style="ticks")
 
 
 def formatTitle(conserved, label):
@@ -77,7 +83,7 @@ def addHorizontalAxTitle(ax, title):
 
 def addVerticalAxTitle(ax, title):
     ax.text(
-        1.1, 0.5, title, verticalalignment='center', rotation=270,
+        0, 0.5, title, verticalalignment='center', rotation=90,
         transform=ax.transAxes)
 
 
@@ -92,8 +98,8 @@ def specifyAxisTicks(ax, xticks=None, yticks=None):
 
 
 def removeAxisLabels(ax, xlabel=False, ylabel=False):
-    (ax.axes.xaxis.set_visible(False) if xlabel else None)
-    (ax.axes.yaxis.set_visible(False) if ylabel else None)
+    (ax.labels.xaxis.set_visible(False) if xlabel else None)
+    (ax.labels.yaxis.set_visible(False) if ylabel else None)
 
 
 def addLogAxis(ax, xlog=False, ylog=False):
@@ -164,6 +170,26 @@ def heatmap(
         ax, data, vmin, vmax, center, **kwargs):
     sns.heatmap(
         ax=ax, data=data, vmin=vmin, vmax=vmax, center=center, **kwargs)
+
+
+def generate_3d_plot(data, save, i_vars, hue):
+    c_dict = {l: i for i, l in enumerate(np.unique(data[hue]))}
+    groups = data[hue].apply(lambda x: c_dict[x])
+    cmap = ListedColormap(
+        sns.color_palette(n_colors=np.unique(data[hue]).size).as_hex())
+    fig = plt.figure(figsize=(6, 6))
+    ax = Axes3D(fig, auto_add_to_figure=False)
+    fig.add_axes(ax)
+    sc = ax.scatter(
+        *[data[c] for c in i_vars], s=20, c=groups, cmap=cmap, alpha=1)
+    ax.set_xlabel(i_vars[0])
+    ax.set_ylabel(i_vars[1])
+    ax.set_zlabel(i_vars[2])
+    plt.legend(
+        handles=sc.legend_elements()[0], labels=c_dict.keys(),
+        bbox_to_anchor=(1.05, 1), loc=2)
+    plt.savefig(save, bbox_inches='tight')
+    plt.clf()
 
 
 def figToImage(title="", fig=None):

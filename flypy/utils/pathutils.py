@@ -177,6 +177,32 @@ def change_extension(
     return path
 
 
+def check_path(
+        path: str
+):
+    """
+    Check if a given path exists, whether it's a file or a folder.
+
+    Args:
+        path (str): Path to check for existence.
+
+    Returns:
+        bool: True if the path exists, False otherwise.
+
+    Examples:
+        >>> invalid_path = "/This/folder/does/not/exist"
+        >>> invalid_path = check_path_exists(invalid_path)
+        >>> print(invalid_path)
+        False
+
+        >>> test_path = "/This/file/does/exist.pdf"
+        >>> test_path = check_path_exists(test_path)
+        >>> print(test_path)
+        True
+    """
+    return op.exists(path)
+
+
 def make_directory(
         path: str
 ):

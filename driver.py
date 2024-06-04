@@ -7,65 +7,67 @@ Created on Fri May 14 03:13:56 2021
 """
 
 import numpy as np
+import pickle
 
-from flypy.utils.pathutils import get_path
-from flypy.utils.analysis import z_score
-from flypy.macros.knight2photon import (
-    threshold_activated_and_inhibited, process_and_cluster_processed_data,
-    plot_processed_data)
+from flypy.datasets.timeseries import TimeSeries
 
 
-def knight_lab_two_photon_analysis():
-    directory = "/Users/ike/Desktop/test"
-    frequency = 5
-    b_start = 1
-    b_stop = 15
-    stim_start = 15
-    stim_stop = 25
-    act_thresh = 1
-    inhib_thresh = -0.5
-    group_names = ["Inhibited Cells", "Nada", "Activated Cells"]
+def temp_block():
+    block = 0
+    # date = "2022_09_16-11_01_40"
+    label = 0
+    n_rows = 23
+    n_cols = 11
+    electrodes = 253
+    hz = 200
+    start_time = -3.5
+    stop_time = 4
+    block_col = "blk"
+    name_col = "txt_lab"
+    day_col = "timestamp"
+    data_col = "aligned_neural"
+    label_col = "one_hot_lab"
+    high_name = "hga"
+    low_name = "low"
+    time_col = "Time (ms)"
+    grid_col = "electrode"
+    range_col = "frequency range"
 
-    total_traces = np.load(get_path(directory, "F", ext="npy"))
-    neuropil_traces = np.load(get_path(directory, "Fneu", ext="npy"))
-    cells = np.load(get_path(directory, "iscell", ext="npy"))[..., 0] >= 1
+    aligned_data_path = "/Users/ike/Documents/Lab/Chang Lab/Data/df_ike.pkl"
+    save_figure_path = "/Users/ike/Desktop/img1.png"
 
-    data = (total_traces - (0.7 * neuropil_traces))[cells]
-    data = z_score(
-        array=data,
-        start=b_start * 60 * frequency,
-        stop=b_stop * 60 * frequency,
-        axis=-1)
-    group_labels = threshold_activated_and_inhibited(
-        data=data,
-        start=stim_start * 60 * frequency,
-        stop=stim_stop * 60 * frequency,
-        active_threshold=act_thresh,
-        inhibit_threshold=inhib_thresh)
-    cluster_labels, _ = process_and_cluster_processed_data(
-        data=data,
-        group_labels=group_labels,
-        max_clusters=10,
-        model="timeserieskmeans",
-        smooth_n=5,
-        n_clusters=2,
-        max_iter=10,
-        n_init=2,
-        random_state=0)
-    times = np.arange(data.shape[-1]) / (60 * frequency)
-    figure = plot_processed_data(
-        data=data,
-        group_labels=group_labels,
-        group_names=group_names,
-        cluster_labels=cluster_labels,
-        X_ticks=times,
-        smooth_n=50)
-    test_save = "/Users/ike/Desktop/test/test_image.tif"
-    figure.save(test_save, compression="tiff_deflate")
+    time_labels = np.arange(start_time, stop_time, 1 / hz)
+    include_cols = [block_col, name_col, label_col, data_col]
+    expand_cols = [name_col, label_col, data_col]
+
+    with open(aligned_data_path, "rb") as f:
+        data = pickle.load(f).head(n=2)
 
 
 def __main__():
-    knight_lab_two_photon_analysis()
+    test_data = np.arange(72).reshape(4, 6, 3)
+    # test_timepoints = np.arange(0, 3, 0.5)
+    # expand = [(-1, "electrode", [1, 2, 3])]
+    # block = 0
+    # timestamp = ["Mon", "Mon", "Tues", "Tues"]
+    #
+    # label = ["a", "b", "c", "d"]
+    # temp = TimeSeriesDataSet(test_data, test_timepoints, expand=expand, time=timestamp, label=label)
+    # temp = temp[{"time": ["Mon"]}]
+    #
+    # temp = temp + temp
+    # print(temp.get_subgroup_counts(["time"]))
+    print(test_data.shape)
+
+    # print(np.transpose(test_data, (0, -1, 1)).reshape(-1, 6))
+    # maxs = 7
+    # dim_order = list(range(maxs))
+    # newa = dim_order.copy()
+    # for i, d in enumerate([2, 5, -1]):
+    #     dim_order.insert(i + 1, dim_order.pop(d))
+    #     print(i+1, dim_order)
+    #
+    #     print("\n")
 
 
 if __name__ == "__main__":
