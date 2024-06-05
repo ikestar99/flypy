@@ -76,6 +76,23 @@ def load_raw_dataframe(
     return data.reset_index(drop=True)
 
 
+def load_analyzed_data(
+        file: str,
+):
+    with open(file, "rb") as f:
+        data = pickle.load(f)
+
+    return data
+
+
+def save_analyzed_data(
+        file: str,
+        data
+):
+    with open(file, "wb") as f:
+        pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+
 def filter_format_dataframe(
         data: pd.DataFrame,
         date_format: list = None,
@@ -200,7 +217,9 @@ def dataframe_to_time_dataset(
         timepoints,
         axis_split: dict = None,
         expand: list = None,
-        f_norm=None
+        f_norm=None,
+        agg_trials: list = None,
+        clip=None
 ):
     """
     Converts data from a DataFrame to a TimeSeries dataset.
@@ -235,9 +254,25 @@ def dataframe_to_time_dataset(
             are performed.
             Defaults to "None", in which case no expansion is performed.
         f_norm (func, optional):
-            Custom function used to normalize each trace individually. Must
+            Custom function used to normalize each trace individually.
             f_func(trace) = trace.
             Defaults to "None", in which case trace data is not normalized.
+        agg_trials (list, optional):
+                Parameters with which to extract central tendency across
+                repeated trials. Contains the following 3 values:
+                -   0 (list):
+                        Metadata multiindex column names by which to group
+                        traces into sets that will be aggregated.
+                -   1 (np.ufunc):
+                        Function with which to perform aggregation.
+                -   3 (dict, optional):
+                        Kwargs to pass to aggregation function. Optional.
+                Passed to TimeSeries.apply_2d_function.
+                Defaults to "None", in which case repeated trials are not
+                aggregated.
+        clip (np.ndarray, optional):
+            Indices of timepoints to which TimeSeries traces are clipped.
+            Defaults to "None", in which case traces are not clipped.
 
     Returns:
         data (TimeSeries):
@@ -257,8 +292,10 @@ def dataframe_to_time_dataset(
         traces = np.reshape(traces, newshape=new_shape)
 
     meta = {key: data[key].to_list() for key in cols_meta}
-    data = TimeSeries(traces, timepoints, trace_names=meta, expand=expand)
-    data = data if f_norm is None else data.apply_1d_function(f_norm)
+    data = TimeSeries(
+        traces, timepoints, trace_names=meta, expand=expand,
+        f_norm=f_norm, agg_trials=agg_trials)
+    data = data if clip is None else data.clip_traces(clip)
     return data
 
 
@@ -266,7 +303,6 @@ def timeseries_to_vector_dataset(
         data: TimeSeries,
         f_feature,
         cols_source: list,
-        cols_label: list,
         *args,
         **kwargs
 ):
@@ -281,9 +317,7 @@ def timeseries_to_vector_dataset(
             np.ndarray as input. Passed to TimeSeries.apply_scalar_function.
         cols_source (list):
             Metadata multiindex column name(s) by which to group features
-            into vectors. Passed to TimeSeries.get_vector_form.
-        cols_label (list):
-            Column name(s) of the corresponding labels for feature vectors.
+            into vectors. Act as corresponding labels for feature vectors.
             Passed to TimeSeries.get_vector_form.
         *args (positional arguments):
             Passed to TimeSeries.get_vector_form.
@@ -296,7 +330,7 @@ def timeseries_to_vector_dataset(
     """
     _col_temp = "_foo"
     data = data.apply_scalar_function(_col_temp, f_feature, *args, **kwargs)
-    vectors, labels = data.get_vector_form(cols_source, cols_label, _col_temp)
+    vectors, labels = data.get_vector_form(cols_source, _col_temp)
     return FeatureVector(vectors, labels)
 
 
@@ -306,7 +340,6 @@ def correlation_over_time(
         col_label: str,
         col_group: str,
         cols_source: list = None,
-        f_trials: np.ufunc = np.mean,
         label_fill: int = -1,
         col_value: str = "correlation",
         col_sep: str = "separability"
@@ -334,10 +367,6 @@ def correlation_over_time(
             Passed to TimeSeries.pairwise_corr_against_reference.
             Defaults to "None", in which case all traces are treated as if they
             come from the same source.
-        f_trials (np.ufunc, optional):
-            Function with which to aggregate traces across repeated trials.
-            Passed to TimeSeries.apply_2d_function.
-            Defaults to "np.mean".
         label_fill (int, optional):
             Integer used as label of comparisons across traces with different
             labels. Must not be present in the set of labels in data or refs
@@ -381,32 +410,29 @@ def correlation_over_time(
     """
     cols_source = [] if cols_source is None else cols_source
     cols_apply = [col_group] + cols_source + [col_label]
-    data = data.apply_2d_function(cols_apply, f_trials, axis=0)
-    refs = refs.apply_2d_function(cols_apply, f_trials, axis=0)
     within_df = data.pairwise_corr_against_reference(
         other=refs, col_label=col_label, col_group=col_group,
-        cols_source=cols_source).reset_index()
-    within_df = within_df.melt(
+        cols_source=cols_source).reset_index().melt(
         id_vars=cols_apply[:-1], var_name=col_label, value_name=col_value)
-    within_df = within_df.sort_values(cols_apply).explode(col_value)
+    within_df = within_df.sort_values(cols_apply).explode(
+        col_value).reset_index(drop=True)
+    within_df = within_df.replace('NaN', pd.NA).dropna(axis=0)
     across_df = within_df.copy()
     across_df[col_label] = (across_df[col_label] != label_fill).astype(int)
     sep_df = across_df.copy().groupby(cols_apply).mean().reset_index().pivot(
         index=cols_apply[:-1], columns=col_label, values=col_value)
     sep_df = pd.DataFrame(sep_df[1] - sep_df[0], columns=[col_sep])
-    sep_df = sep_df.sort_index().reset_index()
+    sep_df = sep_df.sort_index().reset_index(drop=False)
     within_df = within_df.loc[within_df[col_label] != label_fill]
-    return within_df, across_df, sep_df
+    return within_df, across_df, sep_df.replace('NaN', pd.NA).dropna(axis=0)
 
 
 def cosine_similarity_over_time(
-        data: TimeSeries,
-        refs: TimeSeries,
-        f_feature: np.ufunc,
+        data: FeatureVector,
+        refs: FeatureVector,
         col_label: str,
         col_group: str,
-        cols_source: list = None,
-        f_trials: np.ufunc = np.mean,
+        mapping: dict,
         label_fill: int = -1,
         col_value: str = "cosine",
         col_sep: str = "separability"
@@ -415,14 +441,11 @@ def cosine_similarity_over_time(
     Compute pairwise cosine similarities across time between and within labels.
 
     Args:
-        data (TimeSeries):
+        data (FeatureVector):
             Data to correlate across groups.
-        refs (TimeSeries):
+        refs (FeatureVector):
             Filtered subset of data arg to use as reference against which all
             groups in data arg will be compared.
-        f_feature (np.ufunc):
-            Scalar-valued function with which to extract feature. Takes a 1D
-            np.ndarray as input. Passed to TimeSeries.apply_scalar_function.
         col_label (str):
             Metadata multiindex column name to use as label of each feature
             vector when computing within and between label similarities.
@@ -430,16 +453,16 @@ def cosine_similarity_over_time(
             Metadata multiindex column name to use to group feature vectors
             into subsets before computing cosine similarities against refs arg.
             Passed to FeatureVector.pairwise_cosine_against_reference.
-        cols_source (list, optional):
-            Metadata multiindex column name(s) to use as vector source. All
-            features with the same combination of values across these levels
-            will be ordered into a single feature vector.
-            Defaults to "None", in which case all features with the same label
-            and group are ordered into a single feature vector.
-        f_trials (np.ufunc, optional):
-            Function with which to aggregate traces across repeated trials.
-            Passed to TimeSeries.apply_2d_function.
-            Defaults to "np.mean".
+        mapping (dict)
+            Maps index in second axis of FeatureVector labels attribute to
+            corresponding label type. Contains the following two pairings:
+            -   key (str):
+                    One of two values:
+                    -   col_label
+                    -   col_group
+            -   item (int)
+                    Index of key along second axis of FeatureVector
+                    labels attribute.
         label_fill (int, optional):
             Integer used as label of comparisons across feature vectors with
             different labels. Must not be present in the set of labels in data
@@ -479,74 +502,53 @@ def cosine_similarity_over_time(
                     where each row is a difference between the mean similarity
                     within and between labels for the specified metadata set.
     """
-    cols_source = [] if cols_source is None else cols_source
-    cols_vector = [col_group, col_label]
-    data = data.apply_2d_function(cols_vector + cols_source, f_trials, axis=0)
-    refs = refs.apply_2d_function(cols_vector + cols_source, f_trials, axis=0)
-    data = timeseries_to_vector_dataset(
-        data, f_feature, cols_vector, cols_vector)
-    refs = timeseries_to_vector_dataset(
-        refs, f_feature, cols_vector, cols_vector)
     within_df = data.pairwise_cos_against_reference(
-        other=refs, idx_l=cols_vector.index(col_label),
-        idx_g=cols_vector.index(col_group), col_group=col_group)
+        other=refs, idx_l=mapping[col_label], idx_g=mapping[col_group],
+        col_group=col_group)
     within_df = within_df.reset_index().melt(
         id_vars=col_group, var_name=col_label, value_name=col_value)
-    within_df = within_df.sort_values(cols_vector).explode(col_value)
+    within_df = within_df.sort_values(
+        [col_group, col_label]).explode(col_value).reset_index(drop=True)
+    within_df = within_df.replace('NaN', pd.NA).dropna(axis=0)
     across_df = within_df.copy()
     across_df[col_label] = (across_df[col_label] != label_fill).astype(int)
-    sep_df = across_df.copy().groupby(cols_vector).mean().reset_index().pivot(
-        index=cols_vector[:-1], columns=col_label, values=col_value)
+    sep_df = across_df.copy().groupby([col_group, col_label]).mean()
+    sep_df = sep_df.reset_index().pivot(
+        index=col_group, columns=col_label, values=col_value)
     sep_df = pd.DataFrame(sep_df[1] - sep_df[0], columns=[col_sep])
-    sep_df = sep_df.sort_index().reset_index()
+    sep_df = sep_df.sort_index().reset_index(drop=False)
     within_df = within_df.loc[within_df[col_label] != label_fill]
-    return within_df, across_df, sep_df
+    return within_df, across_df, sep_df.replace('NaN', pd.NA).dropna(axis=0)
 
 
 def encode_with_dim_reducer(
-        data: TimeSeries,
-        refs: TimeSeries,
+        data: FeatureVector,
+        refs: FeatureVector,
         reducer,
-        f_feature: np.ufunc,
-        col_label: str,
-        col_group: str,
-        cols_source: list = None,
-        f_trials: np.ufunc = np.mean,
-        dim_name: str = "component",
+        mapping: dict,
+        dim_name: str = "components",
         var_value: str = "variance ratio"
 ):
     """
     Compute pairwise cosine similarities across time between and within labels.
 
     Args:
-        data (TimeSeries):
+        data (FeatureVector):
             Data to correlate across groups.
-        refs (TimeSeries):
+        refs (FeatureVector):
             Filtered subset of data arg to use as reference against which all
             groups in data arg will be compared.
         reducer:
             Instantiated dimensionality reducing object with which to encode
             extracted feature vectors. An example is PCA.
-        f_feature (np.ufunc):
-            Scalar-valued function with which to extract feature. Takes a 1D
-            np.ndarray as input. Passed to TimeSeries.apply_scalar_function.
-        col_label (str):
-            Metadata multiindex column name to use as label of each feature
-            vector when computing within and between label similarities.
-        col_group (str):
-            Metadata multiindex column name to use to group feature vectors
-            into subsets before computing cosine similarities against refs arg.
-            Passed to FeatureVector.pairwise_cosine_against_reference.
-        cols_source (list, optional):
-            Metadata multiindex column name(s) to use as vector source. All
-            features with the same combination of values across these levels
-            will be ordered into a single feature vector.
-            Defaults to "None", in which case all features with the same label
-            and group are ordered into a single feature vector.
-        f_trials (np.ufunc, optional):
-            Function with which to aggregate traces across repeated trials.
-            Passed to TimeSeries.apply_2d_function.
-            Defaults to "np.mean".
+        mapping (dict)
+            Maps index in second axis of FeatureVector labels attribute to
+            corresponding label type. Contains the following pairings:
+            -   key (str):
+                    Name of label encoded in index.
+            -   item (int)
+                    Index of key along second axis of FeatureVector
+                    labels attribute.
         dim_name (str, optional):
             Each encoded feature vector axis is named "dim_name i" where i is
             the index of the encoded feature in each feature vector.
@@ -572,21 +574,15 @@ def encode_with_dim_reducer(
                     -   dim_name
                     -   var_value
     """
-    cols_source = [] if cols_source is None else cols_source
-    cols_vector = [col_group, col_label]
-    data = data.apply_2d_function(cols_vector + cols_source, f_trials, axis=0)
-    refs = refs.apply_2d_function(cols_vector + cols_source, f_trials, axis=0)
-    data = timeseries_to_vector_dataset(
-        data, f_feature, cols_vector, cols_vector)
-    reducer = timeseries_to_vector_dataset(
-        refs, f_feature, cols_vector, cols_vector).fit_model(reducer)
-    data = np.concatenate((data.labels, data.encode(reducer)), axis=1)
-    cols = cols_vector + [
-        f"{dim_name} {i}" for i in range(data.vectors.shape[1])]
+    inverse = {v: k for k, v in mapping.items()}
+    data = np.concatenate(
+        (data.labels, data.encode(refs.fit_model(reducer)).vectors), axis=1)
+    n_components = data.shape[1] - len(mapping)
+    cols = [inverse[i] for i in range(len(mapping))]
+    cols += [f"{dim_name} {i}" for i in range(n_components)]
     reduced_df = pd.DataFrame(data, columns=cols)
     variance_df = np.stack(
-        (np.arange(data.vectors.shape[1]), reducer.explained_variance_ratio_),
-        axis=1)
+        (np.arange(n_components), reducer.explained_variance_ratio_), axis=1)
     variance_df = pd.DataFrame(variance_df, columns=[dim_name, var_value])
     return reduced_df, variance_df
 
@@ -660,8 +656,8 @@ def classification_grid_search(
     r_accuracy = []
     for key, func in func_dict.items():
         vectors = timeseries_to_vector_dataset(
-            data, f_feature=func, cols_source=cols_source,
-            cols_label=[col_label])
+            data, f_feature=func, cols_source=cols_source)
+        vectors.labels = vectors.labels[:, [cols_source.index(col_label)]]
         vectors = vectors.scale() if normalize else vectors
         vectors = [
             [unit_t, unit_v] for unit_t, unit_v
@@ -679,11 +675,9 @@ def source_label_variance(
         data: TimeSeries,
         f_feature,
         col_label: str,
-        cols_source: list = None,
         col_group: str = None,
-        f_trials: np.ufunc = np.median,
+        cols_source: list = None,
         f_labels: np.ufunc = np.mean,
-        idx_signal: np.ndarray = slice(None),
 ):
     """
     Identify sources in a given column with the greatest CV across labels. CV,
@@ -693,13 +687,13 @@ def source_label_variance(
     tendency and CV for each source and group.
 
     # fake data from group i source j
-    data = np.ones((N_trials, N_labels, N_timepoints))
-    data = f_trials(data, axis=0)  # data.shape = (N_labels, N_timepoints)
+    data = np.ones((N_labels, N_timepoints))
     data = f_feature(data, axis=1)  # data.shape = (N_labels,)
     data_out[0].iloc[i, j] = f_labels(data)  # scalar central tendency
     data_out[1].iloc[i, j] = np.std(data) / np.mean(data)  # scalar CV
 
-    NOTE: To extract a signal-to-noise ratio feature, write a custom function
+    NOTE: To extract a signal-to-noise ratio feature, or a feature on a slice
+    write a custom function
     that defines this parameter directly, like so:
     source_label_variance(
         ...,
@@ -716,28 +710,20 @@ def source_label_variance(
             np.ndarray as input. Passed to TimeSeries.apply_scalar_function.
         col_label (str):
             Column name to use as label.
-        cols_source (list, optional):
-            Column name(s) to use as source(s) from which tuning is computed.
-            cols_source = column_of_electrode_idx to compute electrode tunings.
-            Defaults to "None", in which case all features are treated as if
-            they came from the same source.
         col_group (str, optional):
             Column name to use as group identity for each trial. A set of CVs
             will be computed independently for each group.
             Defaults to "None", in which case all traces are treated as part
             of the same group.
-        f_trials (np.ufunc, optional):
-            Function with which to extract feature central trace tendency
-            across repeated trials. Passed to TimeSeries.apply_2d_function.
-            Defaults to "np.mean".
+        cols_source (list, optional):
+            Column name(s) to use as source(s) from which tuning is computed.
+            cols_source = column_of_electrode_idx to compute electrode tunings.
+            Defaults to "None", in which case all features are treated as if
+            they came from the same source.
         f_labels (np.ufunc, optional):
             Scalar-valued function with which to extract central tendency
             across labels. Passed to pd.DataFrame.groupby.agg.
             Defaults to "np.mean".
-        idx_signal (np.ndarray, optional):
-            Indices to extract as signal interval from time axis of traces
-            attribute in data arg.
-            Defaults to "[:]", in which case entire trace is extracted.
 
     Returns:
         (tuple):
@@ -761,188 +747,86 @@ def source_label_variance(
 
     cols_source = [] if cols_source is None else cols_source
     cols_apply = [col_group] + cols_source + [col_label]
-    data = data.apply_2d_function(cols_apply, f_trials, axis=0)
     data = data.apply_scalar_function(
-        _col_holder_func, lambda x: f_feature(x[idx_signal])).meta.copy()
-    data = data.groupby(level=cols_apply)[[_col_holder_func]].agg(
-        f_trials).groupby(level=cols_apply[:-1])
+        _col_holder_func, lambda x: f_feature(x)).meta.copy()
+    data = data.groupby(level=cols_apply[:-1])
     return (
         data.agg(f_labels).reset_index(),
         data.std().div(data.mean()).reset_index())
 
 
-# def get_salient_sources(
-#         data: TimeSeries,
-#         feature_funcs: dict,
-#         idx_noise: np.ndarray,
-#         idx_signal: np.ndarray,
-#         col_label: str,
-#         col_source: str,
-#         complex_func: dict = None,
-#         threshold: float = 1.0,
-#         col_sum: str = "aggregate",
-#         col_filter: str = None
+# def train_k_classifiers(
+#         train_vectors,
+#         classifier,
+#         k,
+#         idx_l: int = 0,
+#         idx_g: int = None,
+#         **kwargs
 # ):
-#     """
-#     Identify values in a given column with the greatest variance across label
+#     single = True if k < 2 else False
+#     k = max(2, k)
+#     splits = [
+#         (unit_t, unit_v) for unit_t, unit_v in train_vectors.k_fold_split(k)]
+#     splits = splits[:1] if single else splits
+#     models = [
+#         units[0].fit_model(classifier(**kwargs), idx_l) for units in splits]
+#     fold_df = [
+#         [["train"] + units[0].classify(models[i], idx_l, idx_g),
+#          ["validation"] + units[1].classify(models[i], idx_l, idx_g),
+#          ["chance"] + units[1].shuffle_within().classify(
+#              models[i], idx_l, idx_g)]
+#         for i, units in enumerate(splits)]
+#     fold_df = [v for s in fold_df for v in s]
+#     columns = ["mode", "label", "prediction"]
+#     columns = columns if idx_g is None else columns + ["group"]
+#     group = ["mode"] if idx_g is None else ["mode", "group"]
+#     fold_df = pd.DataFrame(data=fold_df, columns=columns).explode(columns[1:])
+#     fold_df = fold_df.groupby(group)[["label", "prediction"]].agg(
+#         lambda x: list(x)).apply(
+#         lambda x: pd.Series(
+#             accuracy_score(x["label"], x["prediction"]), index=["accuracy_score"]), axis=1)
+#     return models, fold_df[["accuracy_score"]].reset_index()
 #
-#     First, compute the signal-to-noise ratio for each trace -- for a given
-#     scalar feature extracted from a time series trace, SNR is defined as
-#     scalar_func(trace[signal_interval]) / scalar_func(trace[noise_interval]).
-#     Then, average each SNR value across repeated trials that share the same
-#     label and source. Finally, determine salience as the standard deviation o
-#     SNR across labels for each source and return the sources with the greates
-#     salience. Salience values within each feature are normalized to a [0, 1]
-#     scale.
 #
-#     Args:
-#         data (TimeSeries): Data from which to extract salience
-#         feature_funcs (dict): Feature extraction functions with which to deri
-#             SNR values. Contains the following pairings:
-#             -   key (str): Column name of feature to extract.
-#             -   value (func): function with which to extract feature. Functio
-#                 is scalar-valued and takes a 1D np.ndarray as input. Passed t
-#                 TimeSeries.apply_scalar_function.
-#         idx_noise (np.ndarray): Indices to extract as noise interval from tim
-#             axis of traces attribute in data arg.
-#         idx_signal (np.ndarray): Indices to extract as signal interval from
-#             time axis of traces attribute in data arg.
-#         col_label (str): Column name to use as label.
-#         col_source (str): Column name to use as source from which salience is
-#             computed.
-#         complex_func (dict, optional): Feature extraction functions to perfor
-#             on features extracted by feature_funcs arg. Contains the followin
-#             pairings:
-#             -   key (str): Column name of complex feature to extract.
-#             -   value (list):
-#                 -   col (str): Column name of previously extracted feature.
-#                     Must be one of the keys in feature_funcs arg.
-#                 -   func (function): function with which to extract feature.
-#                     Scalar-valued and takes a 1D np.ndarray as input.
-#             Defaults to None, in which case no complex functions are extracte
-#         threshold (float, optional): Top fraction of sources to include in
-#             output. Defaults to 1.0, in which case all sources are returned
-#         col_sum (str, optional): Column name to fill with sum of salience
-#             across features. Defaults to "aggregate".
-#         col_filter (str, optional): Column name of feature by which to sort
-#             salience and identify top sources. Defaults to None, in which cas
-#             col_sum arg is used.
+# def test_k_classifiers(
+#         test_vectors,
+#         classifiers,
+#         idx_l: int = 0,
+#         idx_g: int = None
 #
-#     Returns:
-#         data (pd.DataFrane): Rows are levels of source variables,
-#     """
-#     for key, func in feature_funcs.items():
-#         data = data.apply_scalar_function(
-#             key, lambda x: func(x[idx_signal]) / func(x[idx_noise]))
+# ):
+#     classifiers = classifiers if type(classifiers) is list else [classifiers]
+#     test_df = [
+#         [["test"] + test_vectors.classify(c, idx_l, idx_g),
+#          ["chance"] + test_vectors.shuffle_within().classify(c, idx_l, idx_g)]
+#         for c in classifiers]
+#     test_df = [v for s in test_df for v in s]
+#     columns = ["mode", "label", "prediction"]
+#     columns = columns if idx_g is None else columns + ["group"]
+#     group = ["mode"] if idx_g is None else ["mode", "group"]
+#     test_df = pd.DataFrame(data=test_df, columns=columns).explode(columns[1:])
+#     test_df = test_df.groupby(group)[["label", "prediction"]].agg(
+#         lambda x: list(x)).apply(
+#         lambda x: pd.Series(
+#             accuracy_score(x["label"], x["prediction"]), index=["accuracy_score"]), axis=1)
+#     return test_df[["accuracy_score"]].reset_index()
 #
-#     complex_func = {} if complex_func is None else complex_func
-#     for key, value in complex_func.items():
-#         col, func = value
-#         data.meta[key] = func(data.meta[col].values)
 #
-#     data = data.meta.groupby(level=[col_label, col_source])[
-#         list(feature_funcs.keys()) + list(complex_func.keys())].mean()
-#     data = data.groupby(level=col_source).std()
-#     data = data.sub(data.min(axis=0), axis=1)
-#     data = data.div(data.max(axis=0), axis=1)
-#     data[col_sum] = data.sum(axis=1)
-#     data[col_sum] = data[col_sum] - np.min(data[col_sum])
-#     data[col_sum] = data[col_sum] / np.max(data[col_sum])
-#     col_filter = col_sum if col_filter is None else col_filter
-#     data = data.sort_values([col_filter], ascending=False).head(
-#         int(data.shape[0] * threshold))
-#     return data.sort_index()
-
-
-def train_k_classifiers(
-        train_vectors,
-        classifier,
-        k,
-        idx_l: int = 0,
-        idx_g: int = None,
-        **kwargs
-):
-    single = True if k < 2 else False
-    k = max(2, k)
-    splits = [
-        (unit_t, unit_v) for unit_t, unit_v in train_vectors.k_fold_split(k)]
-    splits = splits[:1] if single else splits
-    models = [
-        units[0].fit_model(classifier(**kwargs), idx_l) for units in splits]
-    fold_df = [
-        [["train"] + units[0].classify(models[i], idx_l, idx_g),
-         ["validation"] + units[1].classify(models[i], idx_l, idx_g),
-         ["chance"] + units[1].shuffle_within().classify(
-             models[i], idx_l, idx_g)]
-        for i, units in enumerate(splits)]
-    fold_df = [v for s in fold_df for v in s]
-    columns = ["mode", "label", "prediction"]
-    columns = columns if idx_g is None else columns + ["group"]
-    group = ["mode"] if idx_g is None else ["mode", "group"]
-    fold_df = pd.DataFrame(data=fold_df, columns=columns).explode(columns[1:])
-    fold_df = fold_df.groupby(group)[["label", "prediction"]].agg(
-        lambda x: list(x)).apply(
-        lambda x: pd.Series(
-            accuracy_score(x["label"], x["prediction"]), index=["accuracy_score"]), axis=1)
-    return models, fold_df[["accuracy_score"]].reset_index()
-
-
-def test_k_classifiers(
-        test_vectors,
-        classifiers,
-        idx_l: int = 0,
-        idx_g: int = None
-
-):
-    classifiers = classifiers if type(classifiers) is list else [classifiers]
-    test_df = [
-        [["test"] + test_vectors.classify(c, idx_l, idx_g),
-         ["chance"] + test_vectors.shuffle_within().classify(c, idx_l, idx_g)]
-        for c in classifiers]
-    test_df = [v for s in test_df for v in s]
-    columns = ["mode", "label", "prediction"]
-    columns = columns if idx_g is None else columns + ["group"]
-    group = ["mode"] if idx_g is None else ["mode", "group"]
-    test_df = pd.DataFrame(data=test_df, columns=columns).explode(columns[1:])
-    test_df = test_df.groupby(group)[["label", "prediction"]].agg(
-        lambda x: list(x)).apply(
-        lambda x: pd.Series(
-            accuracy_score(x["label"], x["prediction"]), index=["accuracy_score"]), axis=1)
-    return test_df[["accuracy_score"]].reset_index()
-
-
-def train_test_frozen_classifier(
-        all_vectors,
-        classifier,
-        idx_l,
-        idx_g,
-        start=1,
-        **kwargs
-):
-    train_test_df = [
-        [g, accuracy_score(
-            *unit_v.classify(
-                unit_t.fit_model(classifier(**kwargs), idx_l), idx_l))]
-        for g, unit_t, unit_v
-        in all_vectors.leave_last_out_split(idx_g, start)]
-    return pd.DataFrame(data=train_test_df, columns=["group", "accuracy_score"])
-
-
-def save_analyzed_data(
-        file: str,
-        data
-):
-    with open(file, "wb") as f:
-        pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-def load_analyzed_data(
-        file: str,
-):
-    with open(file, "rb") as f:
-        data = pickle.load(f)
-
-    return data
+# def train_test_frozen_classifier(
+#         all_vectors,
+#         classifier,
+#         idx_l,
+#         idx_g,
+#         start=1,
+#         **kwargs
+# ):
+#     train_test_df = [
+#         [g, accuracy_score(
+#             *unit_v.classify(
+#                 unit_t.fit_model(classifier(**kwargs), idx_l), idx_l))]
+#         for g, unit_t, unit_v
+#         in all_vectors.leave_last_out_split(idx_g, start)]
+#     return pd.DataFrame(data=train_test_df, columns=["group", "accuracy_score"])
 
 
 class ControlEncoder:

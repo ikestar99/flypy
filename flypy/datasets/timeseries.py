@@ -59,7 +59,9 @@ class TimeSeries:
             times: np.ndarray,
             trace_names: dict = None,
             metadata: pd.DataFrame = None,
-            expand: list = None
+            expand: list = None,
+            f_norm: np.ufunc = None,
+            agg_trials: list = None
     ):
         """
         Instantiate TimeSeries dataset.
@@ -70,6 +72,12 @@ class TimeSeries:
         arg is mandatory when copying a filtered version of an existing
         instance.
 
+        WARNING: When using np.ufunc aggregation in agg_trials arg, ensure that
+        len(agg_trials) = 3 and agg_trials[3] = {"axis: 0", ...} such that
+        aggregation yields a single trace rather than a scalar. This does not
+        apply to custom functions for which func([N traces, N timepoints])
+        yields a trace by default.
+
         Args:
             traces (np.ndarray):
                 Array of time series traces for analysis. Must be be at least
@@ -78,7 +86,8 @@ class TimeSeries:
                 metadata for all extra dimensions.
             times (np.ndarray):
                 Array of time point labels shared by all traces in traces arg.
-                Must be 1D with shape = (N timepoints,).
+                Must be 1D with shape = (N timepoints,). Arg should reflect
+                time axis after normalization if agg_trials arg is provided.
             trace_names (dict, optional):
                 Metadata corresponding to first dimension of traces arg.
                 Contains the following pairings:
@@ -110,6 +119,26 @@ class TimeSeries:
                         trace_names arg, len(iterable) must equal length of
                         unpacked axis.
                 Defaults to "None", in which case traces arg is already 2D.
+            f_norm (func, optional):
+                Custom function used to normalize each trace individually.
+                f_func(trace) = trace.
+                Passed to TimeSeries.apply_1d_function.
+                Defaults to "None", in which case traces are not normalized.
+            agg_trials (list, optional):
+                Parameters with which to extract central tendency across
+                repeated trials. Contains the following 2 values:
+                -   0 (list):
+                        Metadata multiindex column names by which to group
+                        traces into sets that will be aggregated. All traces
+                        with the same set of values across these columns will
+                        be aggregated into a single trace.
+                -   1 (np.ufunc):
+                        Function with which to perform aggregation.
+                -   3 (dict, optional):
+                        Kwargs to pass to aggregation function.
+                Both values passed to TimeSeries.apply_2d_function.
+                Defaults to "None", in which case repeated trials are not
+                aggregated.
 
         Examples:
             # test_data shape = (2 traces, 3 time points, 3 recording channels)
@@ -170,21 +199,26 @@ class TimeSeries:
         # create metadata DataFrame from raw traces and input args
         if trace_names is not None:
             indices = np.arange(traces.shape[0])
-            self.meta = pd.DataFrame(data=trace_names, index=indices).assign(
-                **{self._COL_TRIAL: indices})
+            self.meta = pd.DataFrame(data=trace_names, index=indices)
+            self._set_index_column(self._COL_TRIAL)
             self._unpack_dims(expand if expand is not None else {})
-            self._set_trace_column()
-            self.add_index(
-                list(self.meta.columns[:self.meta.columns.get_loc(
-                    self._COL_TRACE)].values))
+            self._set_index_column(self._COL_TRACE)
+            self.add_index(self.meta.columns.to_list()[:-1], append=False)
 
         # reset trace column labels to match filtered input data
         elif metadata is not None:
             self.meta = metadata.copy()
-            self._set_trace_column()
+            self._set_index_column(self._COL_TRACE)
 
         else:
             assert ValueError
+
+        norm = self if f_norm is None else self.apply_1d_function(f_norm)
+        norm = self if agg_trials is None else self.apply_2d_function(
+            cols=agg_trials[0], func=agg_trials[1], **(agg_trials + [{}])[2])
+        self.traces = norm.traces
+        self.meta = norm.meta
+        self.times = norm.times
 
     def _unpack_dims(
             self,
@@ -214,21 +248,22 @@ class TimeSeries:
         self.traces = self.traces.transpose(new_dims)
         self.traces = np.reshape(self.traces, (-1, self.traces.shape[-1]))
 
-    def _set_trace_column(
-            self
+    def _set_index_column(
+            self,
+            col: str
     ):
         """
-        Reset indices in trace column so that the nth row in meta attribute
-        points to the nth trace in along dimension 0 in instance traces
+        Add a column of indices to instance meta attribute. If performed prior
+        to TimeSeries._unpack_dims, resulting column will identify unique trial
+        in dataset. If performed after TimeSeries._unpack_dims, resulting
+        column will identify index of corresponding trace in instance traces
         attribute.
 
-        Returns:
-            self (TimeSeries):
-                Includes trace index column.
+        Args:
+            col (str):
+                Name of column that contains added index.
         """
-        self.meta = self.meta.assign(**{
-            self._COL_TRACE: list(range(self.traces.shape[0]))})
-        return self
+        self.meta = self.meta.assign(**{col: list(range(self.meta.shape[0]))})
 
     def __len__(
             self
@@ -259,8 +294,18 @@ class TimeSeries:
         """
         assert type(other) == TimeSeries
 
+        cols_self = list(self.meta.index.names)
+        cols_other = list(other.meta.index.names)
+        cols_total = [c for c in cols_self if c in cols_other]
+        metas = [self.meta.copy(), other.meta.copy()]
+        for i, m in enumerate(metas):
+            m.index = m.index.droplevel(
+                [c for c in list(m.index.names) if c not in cols_total])
+            m = m.reorder_levels(cols_total)
+            metas[i] = m
+
         data = np.concatenate((self.traces, other.traces), axis=0)
-        meta = pd.concat([self.meta, other.meta], axis=0)
+        meta = pd.concat(metas, axis=0)
         return TimeSeries(data, self.times, metadata=meta)
 
     def __getitem__(
@@ -372,21 +417,28 @@ class TimeSeries:
     def add_index(
             self,
             cols: list,
-            append: bool = False
+            append: bool
     ):
         """
         Convert column(s) in instance meta attribute to hierarchical index.
 
+        NOTE: Any entries in cols arg currently in instance meta attribute
+        multiindex will be dropped before adding new index level.
+
         Args:
             cols (list):
                 Column name(s) to convert to multiindex.
-            append (bool, optional):
+            append (bool):
                 True if new index should be appended to existing multiindex.
-                Defaults to "False".
 
         Returns:
             self (TimeSeries): Includes adjusted multiindex.
         """
+        for col in cols:
+            self.meta.index = (
+                self.meta.index.droplevel(col) if col in self.meta.index.names
+                else self.meta.index)
+
         self.meta = self.meta.set_index(cols, append=append)
         return self
 
@@ -426,66 +478,20 @@ class TimeSeries:
         """
         return self.meta.index.get_level_values(col).to_numpy()
 
-    def get_long_form(
-            self
-    ):
-        """
-        Convert hierarchical multiindex to long form DataFrame format. Each row
-        represents a single time series and corresponding summary statistics.
-
-        Returns:
-            (pd.DataFrame):
-                Instance meta attribute in long from.
-        """
-        return self.meta.copy().reset_index(level=self.meta.index.names)
-
-    def get_time_long_form(
-            self,
-            col_x: str,
-            col_y: str
-    ):
-        """
-        Convert hierarchical multiindex to long form DataFrame format. Instance
-        traces attribute is expanded and appended as a new colum in the
-        resulting DataFrame such that each row corresponds to one time point.
-
-        Args:
-            col_x (str):
-                Name of new time coordinate column.
-            col_y (str):
-                Name of new f(time coordinate) column.
-
-        Returns:
-            (pd.DataFrame):
-                Instance meta attribute in time long from.
-        """
-        data = self.meta.copy().assign(**{
-            col_x: [self.times] * self.traces.shape[0],
-            col_y: list(self.traces)}).explode([col_x, col_y])
-        return data.reset_index(level=self.meta.index.names)
-
     def get_vector_form(
             self,
             cols_source: list,
-            cols_label: list,
             col_feature: str,
     ):
         """
         Convert features extracted from instance traces attribute into vectors.
         Call after feature extraction with TimeSeries.apply_scalar_function.
 
-        NOTE: All extracted features with the same combination of cols_group
-        values will be aggregated into a single feature vector in the order
-        specified by all other levels of the multiindex.
-
         Args:
             cols_source (list):
                 Metadata multiindex column name(s) by which to group feature
-                observations into vectors.
-            cols_label (list):
-                Column name(s) of the corresponding labels for feature vectors.
-                Subset of the keys in group_keys arg such that each feature
-                vector is derived from a single label.
+                observations into vectors. Act as corresponding labels for
+                feature vectors.
             col_feature (str):
                 Column name of the desired feature.
 
@@ -496,39 +502,13 @@ class TimeSeries:
                 Array of labels with shape = (N samples, len(label_keys)).
         """
         _safe = self._COL_TRIAL in self.meta.index.names
+        n_levels = len(cols_source)
         levels = cols_source + [self._COL_TRIAL] if _safe else cols_source
         data = self.meta.copy().sort_index().groupby(
             level=levels)[col_feature].agg(lambda x: list(x)).reset_index()
         vectors = np.array(data[col_feature].to_list(), dtype=object)
-        labels = data[cols_label].to_numpy(copy=True)
+        labels = data[levels[:n_levels]].to_numpy(copy=True)
         return vectors, labels
-
-    def to_heatmap(
-            self,
-            col_idx: str = _COL_TRACE,
-    ):
-        """
-        Create a heatmap DataFrame of instance traces attribute. To extract
-        a specific subset of traces, filter with __getitem__ method before
-        calling to_heatmap.
-
-        Args:
-            col_idx (str):
-                Metadata multiindex column name to use as the index for each
-                trace. Effectively acts as column of labels for each trace if
-                generating a heat map from the resulting dataframe.
-                Defaults to TimeSeries._COL_TRACE.
-
-        Returns:
-            data (pd.DataFrame):
-                Dataframe of instance traces attribute with index = col_idx
-                metadata and columns = instance times attribute.
-
-        """
-        data = pd.DataFrame(
-            data=self.traces.copy(), columns=self.times.copy(),
-            index=self.meta.index.get_level_values(level=col_idx))
-        return data
 
     def get_subgroup_counts(
             self,
@@ -745,6 +725,9 @@ class TimeSeries:
         """
         Compute the pairwise correlation between traces in instance.
 
+        NOTE: label_fill arg should not be "None" as this value is used to mask
+        self comparison (perfect correlation between a trace and itself).
+
         Args:
             other (TimeSeries, optional):
                 Another instance against which to compute correlations.
@@ -812,6 +795,10 @@ class TimeSeries:
             """
             mask = np.where(
                 _labels_0[:, None] == _labels_1, _labels_1[None, :], _fill)
+            mask = mask.astype(object)
+            if np.array_equal(_traces_0, _traces_1):
+                np.fill_diagonal(mask, None)
+
             unique = np.unique(_labels_0).tolist() + [_fill]
             corr = np.corrcoef(
                 _traces_0, _traces_1)[:_labels_0.size, -_labels_1.size:]

@@ -11,7 +11,7 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.decomposition import PCA, KernelPCA, FactorAnalysis, FastICA
+from sklearn.decomposition import PCA, FactorAnalysis, FastICA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 from flypy.macros.chang.utils import ControlEncoder
@@ -27,12 +27,14 @@ G_SHAPE = (23, 11)
 N_ELECTRODES = 253
 # recording frequency (Hz), start, stop times (sec) for raw trace data
 HZ = 200
-START = -3.5
-STOP = 4.0
-START_N = START
-STOP_N = -1
-START_S = -1
-STOP_S = 3
+T0 = -3
+T1 = 4.5
+
+# relative start and stop times (s) for noise and signal window respectively
+DTN0 = 0
+DTN1 = -1 - T0  # Noise starts at TO, ends at -1 sec --> 2 sec elapsed
+DTS0 = -1 - T0
+DTSI = 3 - T0  # Signal starts at -1 --> 2 sec elapsed, ends at 6 sec elapsed
 
 
 # column specifying data block, str
@@ -59,7 +61,7 @@ N_DAYS = 14
 IDENTIFIER = C_IND_LABEL
 
 FIRST_BLOCK = 9
-REF_INTERVAL = 2
+REF_INTERVAL = 0
 
 
 """
@@ -75,51 +77,31 @@ C_ELECTRODE = "electrode"
 C_FREQUENCY = "frequency"
 
 
-# # columns from PICKLE data to load
-# CS_PICKLE = [C_TIME, C_BLOCK, IDENTIFIER, C_TRACE]
-# # columns that need to be expanded such that each trial gets a unique row
-# CS_EXPLODE = [IDENTIFIER, C_TRACE]
-# # expanded columns
-# CS_EXPAND = [C_FREQUENCY, C_ELECTRODE]
-# # columns specifying relevant metadata for corresponding traces
-# CS_METADATA = [C_DAY, C_BLOCK, IDENTIFIER]
-# # columns by which to group traces for pairwise analysis
-# CS_GROUP = [C_DAY, C_FREQUENCY, C_ELECTRODE]
-# # columns by which to group traces for signal-to-noise ratio calculation
-# CS_SNR = [C_DAY, IDENTIFIER, C_FREQUENCY, C_ELECTRODE]
-# #
-# CS_VARIABLES = [IDENTIFIER, C_DAY]
-# IDX_L = 0
-# IDX_G = 1
-
-
 """
 encoders should define fit(X, y) and transform(X) methods.
 """
-_idx_noise = np.arange(0, HZ, dtype=int)
-_idx_signal = np.arange(HZ, STOP_S * HZ, dtype=int)
-TOP_FEATURE = "mean."
+_idx_noise = np.arange(DTN0 * HZ, DTN1 * HZ, dtype=int)
+_idx_signal = np.arange(DTS0 * HZ, DTSI * HZ, dtype=int)
+RAW_FEATURE = lambda x: np.sqrt(np.mean(x**2))
+TOP_FEATURE = "r.m.s."
 TOP_FREQUENCIES = ["hga"]  # entry in F_LABEL or F_LABEL itself, list
+DIM_ENCODE = "PCA"
 FEATURES = {
-    "sum": np.sum,
-    "max": np.max,
-    "min": np.min,
-    "median:": np.median,
-    "mean": np.mean,
-    "s.d.": np.std,
-    "a.u.c": np.trapz,
-    "r.m.s.": (lambda x: np.sqrt(np.mean(x**2))),
-    "s.n.r.": (lambda x: np.mean(x[_idx_signal]) / np.mean(x[_idx_noise]))
+    "sum": lambda x: np.sum(x[_idx_signal]),
+    "max": lambda x: np.max(x[_idx_signal]),
+    "min": lambda x: np.min(x[_idx_signal]),
+    "median:": lambda x: np.median(x[_idx_signal]),
+    "mean": lambda x: np.mean(x[_idx_signal]),
+    "s.d.": lambda x: np.std(x[_idx_signal]),
+    "a.u.c": lambda x: np.trapz(x[_idx_signal]),
+    "r.m.s.": lambda x: np.sqrt(np.mean(x[_idx_signal]**2)),
+    "s.n.r.": lambda x: np.mean(x[_idx_signal]) / np.mean(x[_idx_noise])
 }
 ENCODERS = {
     "Null": [ControlEncoder],
     "PCA": [PCA],
     "FA": [FactorAnalysis],
     "fICA": [FastICA]
-    # "poly kPCA": [KernelPCA, {"kernel": "poly"}],
-    # "rbf kPCA": [KernelPCA, {"kernel": "rbf"}],
-    # "sigmoid kPCA": [KernelPCA, {"kernel": "sigmoid"}],
-    # "cosine kPCA": [KernelPCA, {"kernel": "cosine"}]
 }
 CLASSIFIERS = {
     "Random Forest": [RandomForestClassifier],
@@ -127,6 +109,10 @@ CLASSIFIERS = {
     "Log Reg": [LogisticRegression, {"max_iter": 2000}],
     "KNN": [KNeighborsClassifier]
 }
+
 # linalg normalization func, x is a 1d time series trace
-NORM_FUNC = lambda x: x / (
-    np.linalg.norm(x, ord=2) if np.linalg.norm(x, ord=2) != 0 else 1)
+def NORM_FUNC(x):
+    x = x / (np.linalg.norm(x, ord=2) if np.linalg.norm(x, ord=2) != 0 else 1)
+    return x
+
+TRIALS_FUNC = np.median

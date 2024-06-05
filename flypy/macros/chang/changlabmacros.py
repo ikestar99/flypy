@@ -21,17 +21,15 @@ sns.set_theme(style="ticks")
 palette = sns.color_palette("rocket_r")
 
 
-def pipeline(
-        raw_data_path,
-        raw_data_key,
-        dict_save_path,
-        count_blocks=False,
-        correlate_groups=False,
-        find_similarity=False,
-        search_grid=False,
-        calculate_salience=False,
-        do_pca=False
+def data_loading_pipeline(
+        raw_data_path: str,
+        raw_data_key: str,
+        dict_save_path: str,
+        count_blocks: bool,
 ):
+    """
+    Load analysis output if it exists, otherwise start from scratch.
+    """
     graph_data = (
         load_analyzed_data(dict_save_path) if op.isfile(dict_save_path)
         else dict())
@@ -58,8 +56,8 @@ def pipeline(
     time_data = dataframe_to_time_dataset(
         data=data_df.copy(),
         col_trace=C_TRACE,
-        cols_meta=[C_TIME, C_INTERVAL, C_EDAY, C_BLOCK, C_GROUND, C_NATO],
-        timepoints=np.arange(START, STOP, 1 / HZ),
+        cols_meta=[C_INTERVAL, C_BLOCK, C_GROUND],
+        timepoints=np.arange(T0, T1, 1 / HZ),
         axis_split={-1: N_ELECTRODES},
         expand=[
             (-2, C_FREQUENCY, F_LABEL),
@@ -67,11 +65,39 @@ def pipeline(
         f_norm=NORM_FUNC
     )
     print("raw data loaded, converted to TimeSeries dataset")
+
     if count_blocks:
         name = "block count vs elapsed time"
         graph_data[name] = (
             data_df[[C_INTERVAL, C_EDAY, C_BLOCK]].copy().drop_duplicates(
             ).groupby([C_INTERVAL, C_EDAY])[[C_BLOCK]].count().reset_index())
+
+    return time_data
+
+
+def trial_aggregated_pipeline(
+        time_data: TimeSeries,
+        dict_save_path: str,
+        correlate_groups: bool,
+        find_similarity: bool
+):
+    """
+    Load analysis output if it exists, otherwise start from scratch.
+    """
+    graph_data = (
+        load_analyzed_data(dict_save_path) if op.isfile(dict_save_path)
+        else dict())
+
+    """
+    Aggregate traces across trials and split dataset into reference and
+    analysis sets.
+    """
+    time_data = time_data.apply_2d_function(
+        cols=[C_INTERVAL, C_GROUND, C_FREQUENCY, C_ELECTRODE],
+        func=TRIALS_FUNC, axis=0)
+    time_data = time_data.clip_traces(
+            np.arange(DTS0 * HZ, DTSI * HZ, dtype=int))
+    print("raw data aggregated, clipped to signal, reference set extracted")
 
     if correlate_groups:
         """
@@ -83,15 +109,12 @@ def pipeline(
         w_name = "within"
         a_name = "across"
         s_name = "separability"
-        time_data_signal = time_data.clip_traces(
-            np.arange(START_S * HZ, STOP_S * HZ, dtype=int))
         within, across, separability = correlation_over_time(
-            data=time_data_signal,
-            refs=time_data_signal.filter(C_INTERVAL, "<=", REF_INTERVAL),
+            data=time_data,
+            refs=time_data.filter(C_INTERVAL, "<=", REF_INTERVAL),
             col_label=C_GROUND,
             col_group=C_INTERVAL,
             cols_source=[C_FREQUENCY, C_ELECTRODE],
-            f_trials=np.median
         )
         graph_data[name.format(w_name)] = within
         graph_data[name.format(a_name)] = across
@@ -105,26 +128,41 @@ def pipeline(
         within and between labels across a unit of time, using an initial set
         of observations as a continuous standard of comparison.
         """
+        vector_data = timeseries_to_vector_dataset(
+            data=time_data,
+            f_feature=RAW_FEATURE,
+            cols_source=[C_INTERVAL, C_GROUND])
         name = "cosine similarity {} vs elapsed day"
         w_name = "within"
         a_name = "across"
         s_name = "separability"
-        time_data_signal = time_data.clip_traces(
-            np.arange(START_S * HZ, STOP_S * HZ, dtype=int))
         within, across, separability = cosine_similarity_over_time(
-            data=time_data_signal,
-            refs=time_data_signal.filter(C_INTERVAL, "<=", REF_INTERVAL),
-            f_feature=FEATURES[TOP_FEATURE],
+            data=vector_data,
+            refs=vector_data[vector_data.labels[:, 0] <= REF_INTERVAL],
             col_label=C_GROUND,
             col_group=C_INTERVAL,
-            cols_source=[C_FREQUENCY, C_ELECTRODE],
-            f_trials=np.median
+            mapping={C_INTERVAL: 0, C_GROUND: 1}
         )
         graph_data[name.format(w_name)] = within
         graph_data[name.format(a_name)] = across
         graph_data[name.format(s_name)] = separability
         save_analyzed_data(dict_save_path, graph_data)
         print("data similarities computed by group over time")
+
+
+def individual_trial_pipeline(
+        time_data: TimeSeries,
+        dict_save_path: str,
+        search_grid: bool,
+        calculate_salience: bool,
+        do_dim_reduction: bool
+):
+    """
+    Load analysis output if it exists, otherwise start from scratch.
+    """
+    graph_data = (
+        load_analyzed_data(dict_save_path) if op.isfile(dict_save_path)
+        else dict())
 
     if search_grid:
         """
@@ -135,13 +173,12 @@ def pipeline(
         for s in [F_LABEL] + F_LABEL:
             name = f"classification vs feature function {s}"
             accuracy, model, feature = classification_grid_search(
-                data=time_data.filter(C_INTERVAL, "<=", REF_INTERVAL)[
-                    {C_FREQUENCY: s}].clip_traces(
-                    np.arange(START_S * HZ, STOP_S * HZ, dtype=int)),
+                data=time_data[{C_FREQUENCY: s}].filter(
+                    C_INTERVAL, "<=", REF_INTERVAL),
                 func_dict=FEATURES,
                 model_dict=CLASSIFIERS,
                 cols_source=[C_BLOCK, C_GROUND],
-                col_label=C_GROUND,
+                col_label=C_GROUND
             )
             graph_data[name] = accuracy
             print(f"model: {model}\nfeature: {feature}\nfrequency: {s}\n")
@@ -159,177 +196,51 @@ def pipeline(
         c_name = "central tendency"
         v_name = "coefficient of variation"
         center, cvs = source_label_variance(
-            data=time_data[{C_FREQUENCY: TOP_FREQUENCIES}],
+            data=time_data,
             f_feature=FEATURES[TOP_FEATURE],
             col_label=C_GROUND,
-            cols_source=[C_FREQUENCY, C_ELECTRODE],
             col_group=C_INTERVAL,
-            f_trials=np.median,
+            cols_source=[C_ELECTRODE, C_FREQUENCY],
             f_labels=np.mean,
-            idx_signal=np.arange(START_S * HZ, STOP_S * HZ, dtype=int)
         )
         graph_data[name.format(c_name)] = center
         graph_data[name.format(v_name)] = cvs
         save_analyzed_data(dict_save_path, graph_data)
         print("salient sources extracted for top features")
 
-    if do_pca:
+    if do_dim_reduction:
         """
-        Perform PCA on extracted feature vectors and plot procession in first
-        two principal components over time.
+        Perform dimensionality reduction on extracted feature vectors.
         """
-        name = f"pca {TOP_FEATURE} " + "{}"
+        vector_data = timeseries_to_vector_dataset(
+            data=time_data[{C_FREQUENCY: TOP_FREQUENCIES}],
+            f_feature=FEATURES[TOP_FEATURE],
+            cols_source=[C_INTERVAL, C_GROUND])
+        name = f"{DIM_ENCODE} {TOP_FEATURE} " + "{}"
         c_name = "components"
-        v_name = "cumulative variance"
+        v_name = "variance ratio"
+        reducer, kwargs = (ENCODERS[DIM_ENCODE] + [{}])[:2]
         components, variance = encode_with_dim_reducer(
-            data=time_data[{C_FREQUENCY: TOP_FREQUENCIES}],
-            f_feature=FEATURES[TOP_FEATURE],
-            col_label=C_GROUND,
-            cols_source=[C_FREQUENCY, C_ELECTRODE],
-            col_group=C_INTERVAL,
-            f_trials=np.median,
-            f_labels=np.mean,
-            idx_signal=np.arange(START_S * HZ, STOP_S * HZ, dtype=int)
+            data=vector_data,
+            refs=vector_data[vector_data.labels[:, 0] <= REF_INTERVAL],
+            reducer=reducer(**kwargs),
+            mapping={C_INTERVAL: 0, C_GROUND: 1}
         )
-        graph_data[name.format(c_name)] = center
-        graph_data[name.format(v_name)] = cvs
+        graph_data[name.format(c_name)] = components
+        graph_data[name.format(v_name)] = variance
         save_analyzed_data(dict_save_path, graph_data)
-        print("salient sources extracted for top features")
-
-    if False:
-        pass
-        """
-        """
-        # for f, df in outputs.items():
-        #     save = figure_dir.format(f"auc median mean model agnostic {f}")
-        #     df = df.sort_values(df.columns[0], ascending = False)
-        #     ax = sns.heatmap(data=df, cbar=True) #vmin=0, vmax=2)
-        #     f = ax.get_figure()
-        #     plt.tight_layout()
-        #     f.savefig(save, dpi=400)
-        #     plt.clf()
-
-        # save = figure_dir.format(
-        #     f"average aggregate electrode salience by feature")
-        # tots = np.mean(np.stack(tots, axis=0), axis=0)
-        # tots = tots.reshape(*G_SHAPE)
-        # tots = pd.DataFrame(
-        #     data=tots, index=np.arange(G_SHAPE[0]), columns=np.arange(G_SHAPE[1]))
-        # tots.index.name = "grid_y"
-        # tots.columns.name = "grid_x"
-        # ax = sns.heatmap(data=tots, vmin=0, vmax=1, cbar=True)
-        # f = ax.get_figure()
-        # plt.tight_layout()
-        # f.savefig(save, dpi=400)
-        # plt.clf()
-        #
-        # # save data for graphing
-        # name = "Trace Signal to Noise Ratio"
-        # snrs = time_data.grouped_snr(CS_SNR).apply_scalar_function(
-        #     col_snr, np.mean).meta
-        # graph_data[name] = snrs[[col_snr]].reset_index()
-
-
-        """
-        Split vector dataset into train and test sets by cumulative day. Fit
-        unsupervised encoders on data prior to freeze day and identify encoder
-        that maximizes separability between dissimilar labels after freeze day.
-        """
-        # # split into train set up to freeze_day cumulative day, all else for test
-        # train_split, valid_split = vector_data.boolean_split(
-        #     vector_data.labels[..., IDX_G] <= day_freeze)
-        #
-        # # find encoding paradigm that maximizes separability between train labels
-        # encoders = {
-        #     k: train_split.fit_model(i[0](**(i + [{}])[1]))
-        #     for k, i in unsupervised.items()}
-        # separability = {
-        #     k: train_split.encode(i).pairwise_cos(IDX_L)[-1]
-        #     for k, i in encoders.items()}
-        #
-        # # save cosine similarity separability data for graphing
-        # name = "Unsupervised Encoder Train Cluster Seperability"
-        # graph_data[name] = pd.Series(data=separability)
-        #
-        # # use model with peak separability to transform all vector data
-        # max_key = max(separability, key=separability.get)
-        # vector_data = vector_data.encode(encoders[max_key])
-        # train_split = train_split.encode(encoders[max_key])
-        # valid_split = valid_split.encode(encoders[max_key])
-
-        """
-        Train classification models on transformed data prior to freeze day, test
-        on all data afterwards.
-        """
-        # r_train = []
-        # for key, classifier in supervised.items():
-        #     classifier = classifier + [{}]
-        #
-        #     # train k-fold models
-        #     models, train_df = train_k_classifiers(
-        #         train_split, classifier[0], k_fold, IDX_L, IDX_G, **classifier[1])
-        #     train_df = train_df.assign(**{"classifier": key})
-        #
-        #     # use trained models for conference of experts testing
-        #     test_df = test_k_classifiers(valid_split, models, IDX_L, IDX_G).assign(
-        #         **{"classifier": key})
-        #     r_train += [train_df, test_df]
-        #
-        # # save training data for graphing
-        # name = "Supervised Classifier Frozen Accuracies"
-        # graph_data[name] = pd.concat(r_train, ignore_index=True, sort=True)
-
-        """
-        Generate learning curves per classification model.
-        """
-        # r_curve = []
-        # for key, classifier in supervised.items():
-        #     classifier = classifier + [{}]
-        #
-        #     # train classifiers on data from days < n, test on data from nth day
-        #     curve_df = train_test_frozen_classifier(
-        #         vector_data, classifier[0], IDX_L, IDX_G, start, **classifier[1])
-        #     r_curve += [curve_df.assign(**{"classifier": key})]
-        #
-        # # save learning curve data for graphing
-        # name = "Supervised Classifier Leave-One-Out Learning Curves"
-        # graph_data[name] = pd.concat(r_curve, ignore_index=True, sort=True)
-
-
-        """
-        TODO: write code to plot accuracy_score as a function of input time range, plot
-        electrode contributions
-        """
-
-        """
-        Take trained model and determine accuracy_score as a function of input timepoints
-        """
-        # r_accuracy = []
-        # r_electrode_contributions = []
-        # for idx in range(1, len(T_AXIS)):
-        #     time_data = time_data.apply_scalar_function(
-        #         col_feature, root_mean_square, indices=slice(0, idx))
-        #     valid_split = FeatureVector(
-        #         *time_data.get_vector_form(
-        #             cols_group=cols_group, cols_sort=cols_sort,
-        #             cols_label=cols_labels, col_f=col_feature))
-        #     valid_split, _ = valid_split.boolean_split(
-        #         valid_split.labels[:, -1] > day_freeze)
-        #     r_accuracy += [run_inference(valid_split, models, 0)[-1]]
-        #     r_electrode_contributions += [feature_contributions(
-        #         valid_split, models, N_ELECTRODES, idx)]
-
-    return
+        print("Dimensions reduced and variance accounted for")
 
 
 def generate_plots(
         dict_save_path,
         figure_save_template,
-        graph_block_counts=False,
-        graph_group_correlations=True,
-        graph_group_similarities=True,
-        graph_search_grid=True,
-        graph_source_salience=True,
+        graph_block_counts,
+        graph_group_correlations,
+        graph_group_similarities,
+        graph_search_grid,
+        graph_source_salience,
+        graph_encode,
         n_boot=10,
         offset=2
 ):
@@ -346,6 +257,8 @@ def generate_plots(
             plt.tight_layout()
             f.savefig(save, dpi=400)
             plt.clf()
+
+        print("block counts graphed")
 
     if graph_group_correlations:
         w_name = "within"
@@ -385,6 +298,7 @@ def generate_plots(
         plt.tight_layout()
         f.savefig(save, dpi=400)
         plt.clf()
+        print("group correlations graphed")
 
     if graph_group_similarities:
         w_name = "within"
@@ -417,6 +331,7 @@ def generate_plots(
         f = ax.get_figure()
         f.savefig(save, dpi=400)
         plt.clf()
+        print("group similarities graphed")
 
     if graph_search_grid:
         for s in [F_LABEL] + F_LABEL:
@@ -431,8 +346,9 @@ def generate_plots(
             f.savefig(save, dpi=400)
             plt.clf()
 
+        print("grid search graphed")
+
     if graph_source_salience:
-        C_INTERVAL, C_FREQUENCY, C_ELECTRODE, "value"
         name = f"label {TOP_FEATURE} " + "{}"
         c_name = "central tendency"
         v_name = "coefficient of variation"
@@ -451,6 +367,41 @@ def generate_plots(
                 f.savefig(save, dpi=400)
                 plt.clf()
 
+        print("source salience graphed")
+
+    if graph_encode:
+        c_name = "components"
+        v_name = "variance ratio"
+        d_value = "value"
+        v_value = "variance ratio"
+        name = f"{DIM_ENCODE} {TOP_FEATURE} " + "{}"
+        subname = name.format(c_name)
+        save = figure_save_template.format(subname)
+        data = graph_data[subname].iloc[:, :4].melt(
+            id_vars=[C_INTERVAL, C_GROUND], var_name=c_name,
+            value_name=d_value)
+        f = sns.relplot(
+            data=data, x=C_INTERVAL, y=d_value, hue=C_GROUND, row=c_name,
+            legend='brief', kind='line', aspect=2, n_boot=n_boot)
+        sns.despine(offset=offset, trim=True)
+        f.add_legend()
+        plt.tight_layout()
+        f.savefig(save)
+        plt.clf()
+
+        subname = name.format(v_name)
+        save = figure_save_template.format(subname)
+        data = graph_data[subname]
+        data[v_value] = data[v_value].cumsum()
+        ax = sns.lineplot(data=data, x=c_name, y=v_value, n_boot=0)
+        sns.despine(offset=offset, trim=True)
+        # ax.set_aspect(0.5)
+        f = ax.get_figure()
+        plt.tight_layout()
+        f.savefig(save, dpi=400)
+        plt.clf()
+        print("dim reduction graphed")
+
 
 if __name__ == "__main__":
     pickle_partial = "/Users/ike/Documents/Lab/Chang Lab/Data/df_ike.pkl"
@@ -459,15 +410,26 @@ if __name__ == "__main__":
     dict_save = "/Users/ike/Desktop/Chang Lab/graph_data.pkl"
     figure_path = "/Users/ike/Desktop/Chang Lab/Figures/{}.png"
 
-    pipeline(
+    raw_time_series_dataset = data_loading_pipeline(
         raw_data_path=pickle_total,
         raw_data_key="df",
         dict_save_path=dict_save,
         count_blocks=False,
+    )
+
+    trial_aggregated_pipeline(
+        time_data=raw_time_series_dataset,
+        dict_save_path=dict_save,
         correlate_groups=True,
         find_similarity=True,
+    )
+
+    individual_trial_pipeline(
+        time_data=raw_time_series_dataset,
+        dict_save_path=dict_save,
         search_grid=True,
-        calculate_salience=True
+        calculate_salience=True,
+        do_dim_reduction=True
     )
 
     generate_plots(
@@ -476,34 +438,7 @@ if __name__ == "__main__":
         graph_block_counts=True,
         graph_group_correlations=True,
         graph_group_similarities=True,
-        graph_search_grid=False,
-        graph_source_salience=False
+        graph_search_grid=True,
+        graph_source_salience=True,
+        graph_encode=True
     )
-
-
-    # data = load_trial_data(
-    #     pickle_tot, CS_PICKLE, CS_EXPLODE, "df").reset_index()
-    # data[C_TIME] = date_to_cumulative_day(data[C_TIME], D_SLICE, D_FORMAT)
-    # temp = np.unique(data[C_TIME]) // 7
-    # print(np.unique(temp, return_counts=True))
-    # data = np.unique(data[IDENTIFIER])
-
-    # full_list = np.unique(data[IDENTIFIER].values.flatten())
-    # full_list = full_list[full_list < 1000]
-    # encoder = {v: k for k, v in enumerate(full_list)}
-    # data = data.loc[data[IDENTIFIER].isin(full_list)]
-    # data["TEMP"] = np.vectorize(lambda x: encoder[x])(data[IDENTIFIER])
-    # print(encoder)
-    # print(data[[IDENTIFIER, "TEMP"]].head())
-
-    # tmd = taskData.TaskMetadata()
-    # txt_labs = [tmd.loadUtterance(e, remove_descriptors=True) for e in
-    #             sorted(list(set(full_list)))]
-    # data[C_TIME] = date_to_cumulative_day(data[C_TIME], D_SLICE, D_FORMAT)
-    # data = data.rename(columns={C_TIME: C_DAY})
-    # time_data = pickle_data_to_time_dataset(
-    #     data, C_TRACE, CS_METADATA, EXPAND, N_ELECTRODES, T_AXIS)
-    # cols = [C_DAY, IDENTIFIER]
-    # counts = time_data.get_subgroup_counts(cols).reset_index()
-    # counts = counts.groupby(level=cols).size()
-    # print(counts)

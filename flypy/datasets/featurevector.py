@@ -155,10 +155,7 @@ class FeatureVector:
         """
         idx_shuffled = np.arange(len(self))
         self.SHUFFLER.shuffle(idx_shuffled)
-        self.vectors = self.vectors[idx_shuffled]
-        self.labels = self.labels[idx_shuffled]
-        self.shuffle = self.shuffle[idx_shuffled]
-        return self
+        return self[idx_shuffled]
 
     def shuffle_within(
             self
@@ -188,14 +185,11 @@ class FeatureVector:
         described by FeatureVectorDataset.shuffle_between function.
 
         Returns:
-            self (FeatureVectorDataset): instance array attributes sorted in
+            (FeatureVectorDataset): instance array attributes sorted in
                 ascending index order.
         """
         sorted_idx = np.argsort(self.shuffle)
-        self.vectors = self.vectors[sorted_idx]
-        self.labels = self.labels[sorted_idx]
-        self.shuffle = self.shuffle[sorted_idx]
-        return self
+        return self[sorted_idx]
 
     def boolean_split(
             self,
@@ -214,18 +208,14 @@ class FeatureVector:
         Args:
             mask (np.ndarray): 1D boolean mask of the same length as instance.
 
+        TODO: update docstring
         Returns:
             unit_t (FeatureVectorDataset): New instance with vectors labeled
                 True in mask arg.
             unit_f (FeatureVectorDataset): New instance with vectors labeled
                 False in mask arg.
         """
-        unit_t = FeatureVector(
-            self.vectors[mask], self.labels[mask], self.shuffle[mask])
-        mask = np.logical_not(mask)
-        unit_f = FeatureVector(
-            self.vectors[mask], self.labels[mask], self.shuffle[mask])
-        return unit_t, unit_f
+        return self[mask], self[np.logical_not(mask)]
 
     def group_split(
             self,
@@ -248,9 +238,7 @@ class FeatureVector:
         # stratify vector data by group
         for group in np.unique(self.labels[:, idx_g]):
             mask = (self.labels[:, idx_g] == group)
-            unit_g = FeatureVector(
-                self.vectors[mask], self.labels[mask], self.shuffle[mask])
-            yield group, unit_g
+            yield group, self[mask]
 
     def stratified_split(
             self,
@@ -285,11 +273,7 @@ class FeatureVector:
             indices, train_size=split, stratify=self.labels[:, idx_l])
 
         # create new instances with split datasets
-        unit_0 = FeatureVector(
-            self.vectors[idx_0], self.labels[idx_0], self.shuffle[idx_0])
-        unit_1 = FeatureVector(
-            self.vectors[idx_1], self.labels[idx_1], self.shuffle[idx_1])
-        return unit_0, unit_1
+        return self[idx_0], self[idx_1]
 
     def k_fold_split(
             self,
@@ -317,14 +301,8 @@ class FeatureVector:
         splitter = sms.StratifiedKFold(n_splits=k)
         indices = np.arange(len(self))
         for idx_t, idx_v in splitter.split(indices, self.labels[:, idx_l]):
-            # create new train and validation subsets
-            unit_t = FeatureVector(
-                self.vectors[idx_t], self.labels[idx_t], self.shuffle[idx_t])
-            unit_v = FeatureVector(
-                self.vectors[idx_v], self.labels[idx_v], self.shuffle[idx_v])
-
             # return current subset, generate next one when needed
-            yield unit_t, unit_v
+            yield self[idx_t], self[idx_v]
 
     def leave_last_out_split(
             self,
@@ -365,11 +343,7 @@ class FeatureVector:
                 self.labels[..., idx_g],
                 groups[:np.where(groups == group)[0][0]])
             idx_v = self.labels[..., idx_g] == group
-            unit_t = FeatureVector(
-                self.vectors[idx_t], self.labels[idx_t], self.shuffle[idx_t])
-            unit_v = FeatureVector(
-                self.vectors[idx_v], self.labels[idx_v], self.shuffle[idx_v])
-            yield group, unit_t, unit_v
+            yield group, self[idx_t], self[idx_v]
 
     def mask_feature(
             self,
@@ -404,10 +378,14 @@ class FeatureVector:
             idx_l: int = None,
             idx_g: int = None,
             col_group: str = "group",
-            label_fill: float = -1
+            label_fill: int = -1
     ):
         """
-        Compute pairwise cosine similarity between vectors in instance
+        Compute pairwise cosine similarity between vectors in instance.
+
+        NOTE: label_fill arg should not be "None" as this value is used to mask
+        self comparison (perfect cosine between a vector and itself).
+
         Args:
             other (FeatureVector, optional):
                 Another instance against which to compute similarities.
@@ -464,12 +442,16 @@ class FeatureVector:
                     _labels_1.shape = (N vectors_1,).
 
             Returns:
-                coss (pd.Series):
+                cos (pd.Series):
                     cos.loc[l] = [similarities within label l].
-                    corr.loc[-1] = [similarities between labels].
+                    cos.loc[-1] = [similarities between labels].
             """
             mask = np.where(
                 _labels_0[:, None] == _labels_1, _labels_1[None, :], _fill)
+            mask = mask.astype(object)
+            if np.array_equal(_vectors_0, _vectors_1):
+                np.fill_diagonal(mask, None)
+
             unique = np.unique(_labels_0).tolist() + [_fill]
             cos = smp.cosine_similarity(_vectors_0, _vectors_1)
             cos = pd.Series([cos[mask == x] for x in unique], index=unique)
@@ -482,15 +464,15 @@ class FeatureVector:
         meta_self = self.labels.copy()
         meta_other = other.labels.copy()
         if idx_l is None:
-            idx_l = self.labels.shape[1] + 1
+            idx_l = meta_self.shape[1] + 1
             meta_self = np.concatenate(
                 (meta_self, np.arange(len(self))[None]), axis=-1)
             meta_other = np.concatenate(
                 (meta_other, np.arange(len(other))[None]), axis=-1)
         if idx_g is None:
             idx_g = meta_self.shape[1] + 1
-            self.labels = np.concatenate(
-                (self.labels, np.zeros(len(self))[None]), axis=-1)
+            meta_self = np.concatenate(
+                (meta_self, np.zeros(len(self))[None]), axis=-1)
 
         # add static comparison group "other" for each unique group in "self"
         _label = "_label"
