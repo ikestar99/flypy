@@ -594,7 +594,7 @@ def classification_grid_search(
         cols_source: list,
         col_label: str,
         k_fold: int = 5,
-        normalize: bool = False
+        normalize: bool = True
 ):
     """
     Find feature, model combination that optimize classification accuracy.
@@ -631,7 +631,7 @@ def classification_grid_search(
         normalize (bool):
             If True, normalize each feature across all vectors to 0 mean and
             unit variance.
-            Defaults to "False"
+            Defaults to "True".
 
     Returns:
         (tuple):
@@ -656,7 +656,7 @@ def classification_grid_search(
     r_accuracy = []
     for key, func in func_dict.items():
         vectors = timeseries_to_vector_dataset(
-            data, f_feature=func, cols_source=cols_source).scale()
+            data, f_feature=func, cols_source=cols_source)
         vectors.labels = vectors.labels[:, [cols_source.index(col_label)]]
         vectors = vectors.scale() if normalize else vectors
         vectors = [
