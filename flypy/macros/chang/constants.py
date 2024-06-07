@@ -59,15 +59,15 @@ C_INTERVAL = "2 week"
 N_DAYS = 14
 # extracted column used to create trial ground truth labels
 IDENTIFIER = C_IND_LABEL
-
+# first block to include in analysis
 FIRST_BLOCK = 9
-REF_INTERVAL = 0
+# Use all intervals <= this value as standard of comparison
+REF_INTERVAL = 2
 
 
 """
-Following parameters do not exist in pickled DataFrame. They will be extracted
-from additional dimensions of C_TRACE array to reduce data dimensionality into
-a (N traces x N timepoints) array.
+Following parameters will be extracted from additional dimensions of C_TRACE
+array to reduce data dimensionality into an (N traces x N timepoints) array.
 """
 # labels of frequency ranges to unpack from electrode dimension, list[str]
 F_LABEL = ["hga", "lfs"]
@@ -82,31 +82,41 @@ encoders should define fit(X, y) and transform(X) methods.
 """
 _idx_noise = np.arange(DTN0 * HZ, DTN1 * HZ, dtype=int)
 _idx_signal = np.arange(DTS0 * HZ, DTSI * HZ, dtype=int)
+
+# feature extraction for cosine similarity analysis
 RAW_FEATURE = lambda x: np.sqrt(np.mean(x**2))
-TOP_FEATURE = "r.m.s."
 TOP_FREQUENCIES = ["hga"]  # entry in F_LABEL or F_LABEL itself, list
-DIM_ENCODE = "PCA"
+
+# FEATURES["feature name"] = f(trace[signal indices])
 FEATURES = {
     "sum": lambda x: np.sum(x[_idx_signal]),
     "max": lambda x: np.max(x[_idx_signal]),
     "min": lambda x: np.min(x[_idx_signal]),
-    "median:": lambda x: np.median(x[_idx_signal]),
+    "median": lambda x: np.median(x[_idx_signal]),
     "mean": lambda x: np.mean(x[_idx_signal]),
     "s.d.": lambda x: np.std(x[_idx_signal]),
     "a.u.c": lambda x: np.trapz(x[_idx_signal]),
     "r.m.s.": lambda x: np.sqrt(np.mean(x[_idx_signal]**2)),
     "s.n.r.": lambda x: np.mean(x[_idx_signal]) / np.mean(x[_idx_noise])
 }
+
+# FEATURES key to use for salience and PCA analysis
+TOP_FEATURE = "r.m.s."
+
+# ENCODERS["encoder name"] = [class] or [class, {kwargs}]
 ENCODERS = {
     "Null": [ControlEncoder],
     "PCA": [PCA],
     "FA": [FactorAnalysis],
     "fICA": [FastICA]
 }
+DIM_ENCODE = "PCA"
+
+# CLASSIFIERS["classifier name"] = [class] or [class, {kwargs}]
 CLASSIFIERS = {
     "Random Forest": [RandomForestClassifier],
     "LDA": [LinearDiscriminantAnalysis],
-    "Log Reg": [LogisticRegression, {"max_iter": 2000}],
+    "Log Reg": [LogisticRegression],
     "KNN": [KNeighborsClassifier]
 }
 
@@ -115,4 +125,5 @@ def NORM_FUNC(x):
     x = x / (np.linalg.norm(x, ord=2) if np.linalg.norm(x, ord=2) != 0 else 1)
     return x
 
+# function used to aggregate traces across trials for correlation, similarity
 TRIALS_FUNC = np.median

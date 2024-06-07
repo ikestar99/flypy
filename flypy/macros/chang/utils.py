@@ -612,7 +612,7 @@ def classification_grid_search(
             Classification models with which to classify feature vectors.
             Contains the following pairings:
             -   key (str):
-                    Name of mdoel.
+                    Name of model.
             -   item (list):
                     -   0 (model):
                             Model class
@@ -656,7 +656,7 @@ def classification_grid_search(
     r_accuracy = []
     for key, func in func_dict.items():
         vectors = timeseries_to_vector_dataset(
-            data, f_feature=func, cols_source=cols_source)
+            data, f_feature=func, cols_source=cols_source).scale()
         vectors.labels = vectors.labels[:, [cols_source.index(col_label)]]
         vectors = vectors.scale() if normalize else vectors
         vectors = [

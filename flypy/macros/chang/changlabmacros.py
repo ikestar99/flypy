@@ -173,8 +173,7 @@ def individual_trial_pipeline(
         for s in [F_LABEL] + F_LABEL:
             name = f"classification vs feature function {s}"
             accuracy, model, feature = classification_grid_search(
-                data=time_data[{C_FREQUENCY: s}].filter(
-                    C_INTERVAL, "<=", REF_INTERVAL),
+                data=time_data[{C_FREQUENCY: s}],
                 func_dict=FEATURES,
                 model_dict=CLASSIFIERS,
                 cols_source=[C_BLOCK, C_GROUND],
@@ -407,38 +406,39 @@ if __name__ == "__main__":
     pickle_partial = "/Users/ike/Documents/Lab/Chang Lab/Data/df_ike.pkl"
     pickle_total = "/Users/ike/Documents/Lab/Chang Lab/Data/all_nato_data.pkl"
 
-    dict_save = "/Users/ike/Desktop/Chang Lab/graph_data.pkl"
+    # dict_save = "/Users/ike/Desktop/Chang Lab/graph_data.pkl"
+    dict_save = "/Users/ike/Desktop/Chang Lab/graph_data_total_grid_search.pkl"
     figure_path = "/Users/ike/Desktop/Chang Lab/Figures/{}.png"
 
-    raw_time_series_dataset = data_loading_pipeline(
-        raw_data_path=pickle_total,
-        raw_data_key="df",
-        dict_save_path=dict_save,
-        count_blocks=False,
-    )
-
-    trial_aggregated_pipeline(
-        time_data=raw_time_series_dataset,
-        dict_save_path=dict_save,
-        correlate_groups=True,
-        find_similarity=True,
-    )
-
-    individual_trial_pipeline(
-        time_data=raw_time_series_dataset,
-        dict_save_path=dict_save,
-        search_grid=True,
-        calculate_salience=True,
-        do_dim_reduction=True
-    )
+    # raw_time_series_dataset = data_loading_pipeline(
+    #     raw_data_path=pickle_total,
+    #     raw_data_key="df",
+    #     dict_save_path=dict_save,
+    #     count_blocks=False,
+    # )
+    #
+    # trial_aggregated_pipeline(
+    #     time_data=raw_time_series_dataset,
+    #     dict_save_path=dict_save,
+    #     correlate_groups=False,
+    #     find_similarity=False,
+    # )
+    #
+    # individual_trial_pipeline(
+    #     time_data=raw_time_series_dataset,
+    #     dict_save_path=dict_save,
+    #     search_grid=True,
+    #     calculate_salience=False,
+    #     do_dim_reduction=False
+    # )
 
     generate_plots(
         dict_save_path=dict_save,
         figure_save_template=figure_path,
-        graph_block_counts=True,
-        graph_group_correlations=True,
-        graph_group_similarities=True,
+        graph_block_counts=False,
+        graph_group_correlations=False,
+        graph_group_similarities=False,
         graph_search_grid=True,
-        graph_source_salience=True,
-        graph_encode=True
+        graph_source_salience=False,
+        graph_encode=False
     )
