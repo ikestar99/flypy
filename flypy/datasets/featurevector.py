@@ -12,214 +12,209 @@ import sklearn.preprocessing as spp
 import sklearn.model_selection as sms
 import sklearn.metrics.pairwise as smp
 
+from flypy.datasets.coredataset import CoreDataset
 
-class FeatureVector:
+
+class FeatureVector(CoreDataset):
     """
-    Class to pair feature vectors with a corresponding label.
+    Class to organize, filter, and manipulate vectors and paired metadata.
+    Inherits from CoreDataset class.
 
-    Feature vectors are stored in a 2D array while labels are stored in a 1D
-    array.
-
-    TODO: add shuffler
+    ---------------------------------------------------------------------------
     Attributes:
-        SHUFFLER (np.random._generator.Generator): Index shuffling generator.
-        COS_GROUP (str): Name given to column of group value used when
-            computing cosine similarities. Relevant for pairwise_cos_against_reference
-            function return.
-        COS_LABEL (str): Name given to column of vector label used when
-            computing cosine similarities. Relevant for pairwise_cos_against_reference
-            function return.
-        COS_VALUE (str): Name given to column of cosine similarity values.
-            Relevant for pairwise_cos_against_reference function return.
-        vectors (np.ndarray): Feature vectors.
-        n_features (int): Number of features in each vector.
-        labels (np.ndarray): Corresponding labels for feature vectors.
-        shuffle (np.ndarray): Array containing index order of features arg.
+        _TRIAL (str):
+            Internal metadata level to distinguish between repeated trials.
+        _INDEX (str):
+            Internal metadata level to track corresponding index of each datum.
+        _OTHER (str):
+            Internal suffix used for comparisons against a reference.
+        _SCALER (sklearn.preprocessing._data.StandardScaler):
+            Used to scale vector features to zero mean and unit variance.
+        _SHUFFLER (numpy.random._generator.Generator):
+            Used to shuffle metadata-vector pairings.
+        data (np.ndarray):
+            Stored data.
+        meta (pd.DataFrame):
+            Hierarchically indexed DataFrame storing metadata.
+        axes (int):
+            Number of axes per datum.
+
+    ---------------------------------------------------------------------------
+    Examples:
+        Instantiate using "expand" arg.
+        >>> # test_data shape = (8 vectors, 5 features)
+        >>> test_data = np.arange(40).reshape(8, 5)
+        >>> # test_meta shape = (8 vectors, 3 metadata variables)
+        >>> test_meta = pd.DataFrame(
+        ... {"group": ["a", "a", "a", "b", "b", "c", "c", "d"],
+        ... "label": [1, 1, 2, 2, 3, 3, 4, 4], "type": "fast"})
+        >>> test_dataset = FeatureVector(
+        ... test_data, test_meta)
+        >>> test_dataset.data
+        array([[ 0,  1,  2,  3,  4],
+               [ 5,  6,  7,  8,  9],
+               [10, 11, 12, 13, 14],
+               [15, 16, 17, 18, 19],
+               [20, 21, 22, 23, 24],
+               [25, 26, 27, 28, 29],
+               [30, 31, 32, 33, 34],
+               [35, 36, 37, 38, 39]])
+        >>> test_dataset.meta
+                                          _data_index
+        group label type _repeated_trial
+        a     1     fast 0                          0
+                         1                          1
+              2     fast 2                          2
+        b     2     fast 3                          3
+              3     fast 4                          4
+        c     3     fast 5                          5
+              4     fast 6                          6
+        d     4     fast 7                          7
+
+        -----------------------------------------------------------------------
+        Scale features to zero mean and unit variance.
+        >>> test_scale = test_dataset.scale()
+        >>> np.around(test_scale.data, 3)
+        array([[-1.528, -1.528, -1.528, -1.528, -1.528],
+               [-1.091, -1.091, -1.091, -1.091, -1.091],
+               [-0.655, -0.655, -0.655, -0.655, -0.655],
+               [-0.218, -0.218, -0.218, -0.218, -0.218],
+               [ 0.218,  0.218,  0.218,  0.218,  0.218],
+               [ 0.655,  0.655,  0.655,  0.655,  0.655],
+               [ 1.091,  1.091,  1.091,  1.091,  1.091],
+               [ 1.528,  1.528,  1.528,  1.528,  1.528]])
+
+        -----------------------------------------------------------------------
+        Shuffle metadata-vector pairings.
+        >>> test_shuffle = test_dataset.shuffle()
+        >>> test_shuffle.data
+        array([[30, 31, 32, 33, 34],
+               [ 5,  6,  7,  8,  9],
+               [25, 26, 27, 28, 29],
+               [ 0,  1,  2,  3,  4],
+               [20, 21, 22, 23, 24],
+               [35, 36, 37, 38, 39],
+               [10, 11, 12, 13, 14],
+               [15, 16, 17, 18, 19]])
+        >>> test_shuffle.meta
+                                          _data_index
+        group label type _repeated_trial
+        a     1     fast 0                          0
+                         1                          1
+              2     fast 2                          2
+        b     2     fast 3                          3
+              3     fast 4                          4
+        c     3     fast 5                          5
+              4     fast 6                          6
+        d     4     fast 7                          7
+
+        -----------------------------------------------------------------------
+        Split instance in two within labels.
+        >>> test_split_1, test_split_2 = test_dataset.stratified_split(
+        ... 0.5, "label")
+        >>> test_split_1.data
+        array([[10, 11, 12, 13, 14],
+               [25, 26, 27, 28, 29],
+               [ 5,  6,  7,  8,  9],
+               [35, 36, 37, 38, 39]])
+        >>> test_split_1.meta
+                                          _data_index
+        group label type _repeated_trial
+        a     1     fast 1                          2
+              2     fast 2                          0
+        c     3     fast 5                          1
+        d     4     fast 7                          3
+        >>> test_split_2.data
+        array([[15, 16, 17, 18, 19],
+               [30, 31, 32, 33, 34],
+               [ 0,  1,  2,  3,  4],
+               [20, 21, 22, 23, 24]])
+        >>> test_split_2.meta
+                                          _data_index
+        group label type _repeated_trial
+        a     1     fast 0                          2
+        b     2     fast 3                          0
+              3     fast 4                          3
+        c     4     fast 6                          1
     """
-    SHUFFLER = np.random.default_rng()
-    SCALER = spp.StandardScaler()
-    COS_GROUP = "group"
-    COS_LABEL = "pair label"
-    COS_VALUE = "cosine similarity"
-    COS_DELTA = "cosine seperability"
+    _SCALER = spp.StandardScaler()
+    _SHUFFLER = np.random.default_rng()
 
     def __init__(
             self,
-            vectors: np.ndarray,
-            labels: np.ndarray,
-            shuffle: np.ndarray = None
+            data: np.ndarray,
+            meta: pd.DataFrame,
+            expand: list = None
     ):
         """
-        Instantiate FeatureVector dataset.
+        Instantiate TimeSeries instance.
+        See CoreDataset.__init__ docstring for more detailed description.
+
+        NOTE: data.ndim = 1 (N vectors) + 1 (1d vector) + len(expand).
 
         Args:
-            vectors (np.ndarray): Array of feature vectors for analysis. Must
-                be 2D with shape = (N samples, N features).
-            labels (np.ndarray): Array of labels corresponding to vectors arg.
-                Must be 1D with shape = (N samples,) or 2D with shape =
-                (N samples, N labels).
-            shuffle (np.ndarray, optional): Mandatory when creating a new
-                instance from a subset of an existing instance. Array of
-                indices that relate the position of a given vector in feature
-                arg and corresponding label in labels arg to their indices in
-                an initial dataset. Used to update labels after shuffling.
+            data (np.ndarray):
+                Array of feature vectors for analysis. Must be at least 2d.
+                data.shape = (N vectors, ..., N features, ...).
+            meta (pd.DataFrame):
+                Metadata corresponding to first axis of data arg.
+                meta.iloc[i, :] = set of labels for data[i].
+            expand (list, optional):
+                Mandatory if data.ndim > 2. len(expand) = traces.ndim - 2.
+                See CoreDataset.__init__ docstring
         """
         # set instance attributes
-        self.vectors = np.atleast_2d(vectors).copy()
-        self.n_features = self.vectors.shape[-1]
-        self.labels = np.atleast_2d(labels).copy()
-        self.shuffle = np.atleast_1d(
-            np.arange(vectors.shape[0]) if shuffle is None else shuffle).copy()
-
-    def __len__(
-            self
-    ):
-        """
-        Returns:
-            (int): Number of (feature vector, label) pairs stored.
-        """
-        return self.vectors.shape[0]
-
-    def __add__(
-            self,
-            other
-    ):
-        assert type(other) == FeatureVector
-
-        vectors = np.concatenate((self.vectors, other.vectors), axis=0)
-        labels = np.concatenate((self.labels, other.labels), axis=0)
-        shuffle = np.concatenate((self.shuffle, other.shuffle), axis=0)
-        return FeatureVector(vectors, labels, shuffle)
-
-    def __getitem__(
-            self,
-            idx: int
-    ):
-        """
-        Filter slice of vectors and corresponding labels.
-
-        Args:
-            idx (int | slice): Indices of instance features and labels
-                attributes to extract
-
-        Returns:
-            (FeatureVector): New instance filtered to include the data
-                specified by idx arg.
-        """
-        return FeatureVector(
-            self.vectors[idx], self.labels[idx], self.shuffle[idx])
+        super(FeatureVector, self).__init__(data, meta, axes=1, expand=expand)
 
     def scale(
             self
     ):
-        return FeatureVector(
-            self.SCALER.fit_transform(self.vectors), self.labels, self.shuffle)
-
-    def set_labels(
-            self,
-            labels: np.ndarray,
-            idx_l: int = 0
-    ):
         """
-        Change the labels describing instance vectors attribute.
-
-        Note: set_labels assumes labels arg corresponds to original set of
-        feature vectors used to construct instance, before any shuffle or split
-        operations were performed.
-
-        Args:
-            labels (np.ndarray): 1D Array of labels with which to update
-                instance labels attribute.
-            idx_l (int, optional): Column index in which to insert new labels.
-                Relevant for instance with multiple labels, in which case only
-                labels[:, idx] will be updated. Defaults to 0.
+        Scale vector features to zero mean and unit variance.
 
         Returns:
-            self (FeatureVectorDataset): Labels attribute updated at idx.
-
+            (FeatureVector)
+                New instance with scaled vector features.
         """
-        self.labels[:, idx_l] = labels[self.shuffle]
-        return self
+        return FeatureVector(self._SCALER.fit_transform(self.data), self.meta)
 
-    def shuffle_between(
+    def shuffle(
             self
     ):
         """
-        Shuffle instance vectors and labels attributes. Shuffle procedure
-        maintains pairing between individual feature vectors and their
-        corresponding labels.
+        Shuffle metadata-vector pairings.
 
         Returns:
-            self (FeatureVectorDataset): Vectors and labels attributes shuffled
-                along first dimension.
+            (FeatureVector):
+                New instance with shuffled labels.
         """
         idx_shuffled = np.arange(len(self))
-        self.SHUFFLER.shuffle(idx_shuffled)
-        return self[idx_shuffled]
-
-    def shuffle_within(
-            self
-    ):
-        """
-        Shuffle instance labels attribute. Shuffle procedure is relevant for
-        negative control analysis.
-
-        WARNING: Shuffle breaks concordance between features and labels. This
-        cannot be undone.
-
-        Returns:
-            (FeatureVector): New instance with labels attribute shuffled
-                along first dimension.
-        """
-        idx_shuffled = np.arange(len(self))
-        self.SHUFFLER.shuffle(idx_shuffled)
-        return FeatureVector(
-            self.vectors, self.labels[idx_shuffled], self.shuffle)
-
-    def undo_shuffle_between(
-            self
-    ):
-        """
-        Sort instance attributes in ascending index order. Sorting applies on
-        indices in instance shuffle attribute and effectively undoes shuffle
-        described by FeatureVectorDataset.shuffle_between function.
-
-        Returns:
-            (FeatureVectorDataset): instance array attributes sorted in
-                ascending index order.
-        """
-        sorted_idx = np.argsort(self.shuffle)
-        return self[sorted_idx]
+        self._SHUFFLER.shuffle(idx_shuffled)
+        return FeatureVector(self.data[idx_shuffled], self.meta)
 
     def boolean_split(
             self,
             mask: np.ndarray
     ):
         """
-        Split instance into two new instances according to boolean mask. Make a
-        mask with a boolean operation on a set of labels in instance labels
-        attribute and create two new instances of all true val
-
-        WARNING: Unlike with stratified split methods, boolean_split will not
-        force even label representation in the output datasets. For downstream
-        encoding tasks, ensure that dataset used for training is split in such
-        a way that all labels are represented.
+        Split instance into two new instances according to boolean mask.
 
         Args:
-            mask (np.ndarray): 1D boolean mask of the same length as instance.
+            mask (np.ndarray):
+                1d boolean mask. mask.size = len(self)
 
         TODO: update docstring
         Returns:
-            unit_t (FeatureVectorDataset): New instance with vectors labeled
-                True in mask arg.
-            unit_f (FeatureVectorDataset): New instance with vectors labeled
-                False in mask arg.
+            (FeatureVector):
+                New instance with vectors labeled True in mask arg.
+            (FeatureVector):
+                New instance with vectors labeled False in mask arg.
         """
         return self[mask], self[np.logical_not(mask)]
 
     def group_split(
             self,
-            idx_g: int
+            group: str
     ):
         """
         Generate non-overlapping splits of the vector dataset by group.
@@ -227,50 +222,44 @@ class FeatureVector:
         the full dataset in aggregate.
 
         Args:
-            idx_g (int): Index in instance labels attribute used to split
-                groups.
+            group (str):
+                Metadata level name to interpret as group identity.
 
         Yields:
-            group (scalar): Group label of current iteration.
-            unit_g (FeatureVectorDataset): New instance where all vectors are
-                members of group in group yield value.
+            group (scalar):
+                Group label of current iteration.
+            (FeatureVector):
+                New instance with vectors in specified group.
         """
         # stratify vector data by group
-        for group in np.unique(self.labels[:, idx_g]):
-            mask = (self.labels[:, idx_g] == group)
-            yield group, self[mask]
+        groups = self[group]
+        for group in np.unique(groups):
+            yield group, self[groups == group]
 
     def stratified_split(
             self,
             split: float,
-            idx_l: int = 0
+            label: str
     ):
         """
-        Split instance into two new instances with fixed data ratio. Split is
-        performed within labels rather than overall, such that the two output
-        FeatureVectorDatasets have roughly the same distribution of labels as
-        the initial instance.
-
-        Note: stratified_split is built to return two new instances. To create
-        more than two subsets, call function multiple times such that each call
-        returns a subset of the desired ratio and another subset that will be
-        split further.
+        Split instance into two new instances with fixed data ratio. Split
+        maintains the label distribution to the extent possible.
 
         Args:
-            split (float): Ratio by which to split instance. 0 < split < 1.
-            idx_l (int): Index in instance labels attribute used to stratify.
-                Defaults to 0.
+            split (float):
+                Ratio by which to split instance. 0 < split < 1.
+            label (str):
+                Metadata level name used as label identity to stratify.
 
         Returns:
-            unit_0 (FeatureVectorDataset): New instance with the first split
-                fraction of vectors within each label specified by idx.
-            unit_1 (FeatureVectorDataset): New instance with the last 1 - split
-                fraction of vectors within each label specified by idx.
+            (FeatureVector):
+                New instance with first split.
+            (FeatureVector):
+                New instance with second split.
         """
         # track indices of splits within labels
-        indices = np.arange(len(self))
         idx_0, idx_1 = sms.train_test_split(
-            indices, train_size=split, stratify=self.labels[:, idx_l])
+            np.arange(len(self)), train_size=split, stratify=self[label])
 
         # create new instances with split datasets
         return self[idx_0], self[idx_1]
@@ -278,36 +267,34 @@ class FeatureVector:
     def k_fold_split(
             self,
             k: int,
-            idx_l: int = 0
+            label: str
     ):
         """
-        Generate a k-fold split of the vector dataset within labels. Resulting
-        splits are stratified by vector label and each represent the full
-        dataset.
+        Generate a k-fold split of the vectors stratified by labels.
 
         Args:
-            k (int): Number of folds to generate. Each fold is distributed such
-                that the train and test sets are roughly (k - 1)/k and 1/k
-                fractions of the full dataset, respectively. Must be >= 2.
-            idx_l (int): Index in instance labels attribute used to stratify.
-                Defaults to 0.
+            k (int):
+                Number of folds to generate.
+            label (str):
+                Metadata level name used to stratify such that each split
+                includes a similar distribution of labels across folds.
 
         Yields:
-            unit_t (FeatureVectorDataset): New instance with the train data
-                split for the current fold.
-            unit_v (FeatureVectorDataset): New instance with the validation
-                data split for the current fold.
+            (FeatureVector):
+                New instance with current fold train split.
+            (FeatureVector):
+                New instance with current fold validation split.
         """
         splitter = sms.StratifiedKFold(n_splits=k)
-        indices = np.arange(len(self))
-        for idx_t, idx_v in splitter.split(indices, self.labels[:, idx_l]):
+        for idx_t, idx_v in splitter.split(np.arange(len(self)), self[label]):
             # return current subset, generate next one when needed
             yield self[idx_t], self[idx_v]
 
     def leave_last_out_split(
             self,
-            idx_g: int,
-            start: int = 1
+            group: str,
+            start: int = 1,
+            reverse: bool = False
     ):
         """
         Generate a leave-one-out split of the vector dataset by group.
@@ -315,116 +302,78 @@ class FeatureVector:
         set of all samples in groups j < i and a test set of all samples in
         group i. The final split is the only that includes the full dataset.
 
-        NOTE: Group labels are sorted in ascending order prior to split.
-
         WARNING: leave_last_out_split will not check that a given train split
-        represents all possible labels. Use idx_s arg as applicable to ensure
-        all training sets represent all potential labels.
+        represents all possible labels.
 
         Args:
-            idx_g (int): Index in instance labels attribute used to split
-                groups.
-            start (int): Index of first unique group to use as test set. idx_
-                = 5 indicates that the first split will include a train set of
-                the first 5 groups and a test set of the 6th group. Defaults to
-                1, in which case the first split includes a train set of group
-                1 and a test set of group 2.
+            group (str):
+                Metadata level name used as group identity.
+            start (int, optional):
+                Index of first unique group to use as test set.
+                Defaults to "1", in which case the first split includes a train
+                set of group 1 and a test set of group 2.
+            reverse (bool, optional):
+                If True, sort groups in descending order before splitting.
+                Defaults to "False", in which case groups are sorted in
+                ascending order.
 
         Yields:
-            group (scalar): Validation set group label for current iteration.
-            unit_t (FeatureVectorDataset): New instance with the train data
-                split for the current fold.
-            unit_v (FeatureVectorDataset): New instance with the validation
-                data split for the current fold.
+            group (scalar):
+                Validation set group label for current iteration.
+            (FeatureVector):
+                New instance with current iteration train data.
+            (FeatureVector):
+                New instance with current iteration validation data.
         """
-        groups = np.unique(self.labels[..., idx_g])
-        for i, group in enumerate(groups[start:]):
-            idx_t = np.in1d(
-                self.labels[..., idx_g],
-                groups[:np.where(groups == group)[0][0]])
-            idx_v = self.labels[..., idx_g] == group
+        # get unique group labels
+        groups = self[group]
+        unique = np.unique(groups)
+        unique = unique[::-1] if reverse else unique
+
+        # iterate over groups, yield current split
+        for i, group in enumerate(unique[start:]):
+            idx_t = np.in1d(groups, unique[:start + i])
+            idx_v = groups == group
             yield group, self[idx_t], self[idx_v]
 
-    def mask_feature(
+    def cont_cos_similarity(
             self,
-            idx_f: int,
-            fill_value: float = None
-    ):
-        """
-        Mask a feature in instance vectors attribute with a set fill value.
-
-        Args:
-            idx_f (int/list): Index along second axis of instance vectors
-                attribute to mask.
-            fill_value (float, optional): Fill value for masked feature.
-                Defaults to None, in which case m_idx feature will be dropped
-                entirely from vectors attribute.
-
-        Returns:
-            unit_m (FeatureVectorDataset): New instance with underlying vectors
-                attribute masked.
-        """
-        unit_m = FeatureVector(self.vectors, self.labels, self.shuffle)
-        if fill_value is None:
-            unit_m.vectors = np.delete(unit_m.vectors, idx_f, axis=-1)
-        else:
-            unit_m.vectors[:, idx_f] = fill_value
-
-        return unit_m
-
-    def pairwise_cos_against_reference(
-            self,
-            other=None,
-            idx_l: int = None,
-            idx_g: int = None,
-            col_group: str = "group",
-            label_fill: int = -1
+            cont,
+            label: str,
+            group: str,
+            ignore: list = None,
     ):
         """
         Compute pairwise cosine similarity between vectors in instance.
 
-        NOTE: label_fill arg should not be "None" as this value is used to mask
-        self comparison (perfect cosine between a vector and itself).
-
         Args:
-            other (FeatureVector, optional):
-                Another instance against which to compute similarities.
-                Defaults to "None", in which case similarities are computed
-                against self and reciprocal similarity values are 1.
-            idx_l (int, optional):
-                Index in instance labels attribute to use as label for each
-                vector prior to computing similarity matrix. Must be present in
-                both "self" and "other" arg, if provided.
-                Defaults to "None", in which case all vectors are treated as if
-                they have unique labels.
-            idx_g (int, optional):
-                Index in instance labels attribute to use as group identity for
-                comparison against "other" arg. If "other" is "None", each
-                group is compared against itself.
-                Defaults to "None", in which case all vectors are treated as
-                part of the same group.
-            col_group (str, optional):
-                Name of the index in the returned DataFrame.
-                Defaults to "group".
-            label_fill (int, optional):
-                Used as label for similarity values between labels. Must not
-                be equal to real labels in either FeatureVector arg.
-                Defaults to "-1".
+            cont (FeatureVector, optional):
+                Static instance against which to compute similarity.
+            label (str):
+                Metadata level name to use as label for each vector prior to
+                computing similarity matrix. Must be present in both "self" and
+                "cont".
+            group (str):
+                Metadata level name by which to group traces into subsets for
+                comparison against "cont".
+            ignore (list, optional):
+                Metadata level names to ignore when identifying valid
+                comparisons.
+                Defaults to "None", in which case comparisons are made within
+                all metadata levels outside of those specified by "label" and
+                "group" args.
 
-        TODO: update returns section of docstring
         Returns:
-            groups (np.ndarray): Group order of subsequent similarity arrays.
-            r_within (np.ndarray): Average cosine similarity for all within
-                label vector pairings for each group.
-            r_between (np.ndarray): Average cosine similarity for all between
-                label vector pairings for each group.
+            (pd.DataFrame)
+                meta_cos.shape = (N groups, N labels).
+                meta_cos.loc[g, l] = [within-label similarities in group g]
+                meta_cos.loc[g, -1] = [between-label similarities in group g]
         """
         def _cos_by_label(
-                _vectors_0: np.ndarray,
-                _labels_0: np.ndarray,
-                _vectors_1: np.ndarray,
-                _labels_1: np.ndarray,
-                _fill: int
+                _v_s: np.ndarray,
+                _l_s: np.ndarray,
+                _v_c: np.ndarray,
+                _l_c: np.ndarray,
         ):
             """
             Nested func. Compute cosine similarity between every combination of
@@ -432,111 +381,115 @@ class FeatureVector:
             each label and list of correlations between all labels.
 
             Args:
-                _vectors_0 (np.ndarray):
+                _v_s (np.ndarray):
                     _vectors_0.shape = (N vectors_0, N features).
-                _labels_0 (np.ndarray):
+                _l_s (np.ndarray):
                     _labels_0.shape = (N vectors_0,).
-                _vectors_1 (np.ndarray):
+                _v_c (np.ndarray):
                     _vectors_1.shape = (N vectors_1, N features).
-                _labels_1 (np.ndarray):
+                _l_c (np.ndarray):
                     _labels_1.shape = (N vectors_1,).
 
             Returns:
                 cos (pd.Series):
-                    cos.loc[l] = [similarities within label l].
-                    cos.loc[-1] = [similarities between labels].
+                    cos.loc[l] = [cosine separability within label l].
             """
-            mask = np.where(
-                _labels_0[:, None] == _labels_1, _labels_1[None, :], _fill)
-            mask = mask.astype(object)
-            if np.array_equal(_vectors_0, _vectors_1):
-                np.fill_diagonal(mask, None)
+            cos = smp.cosine_similarity(_v_s, _v_c)
+            if np.array_equal(_v_s, _v_c):
+                np.fill_diagonal(cos, np.nan)
 
-            unique = np.unique(_labels_0).tolist() + [_fill]
-            cos = smp.cosine_similarity(_vectors_0, _vectors_1)
-            cos = pd.Series([cos[mask == x] for x in unique], index=unique)
-            return cos
+            unique = np.unique(_l_s[np.isin(_l_s, _l_c)])
+            cos = [
+                cos[(_l_s == i)[:, None] * (_l_c == i)[None]].flatten() -
+                np.mean(cos[(_l_s == i)[:, None] * (_l_c != i)[None]])
+                for i in unique]
+            return pd.Series(cos, index=unique)
 
-        # create a dataframe to segment vector index by source
-        _ndx = self.labels.shape[1]
-        _vdx = "_vector_idx"
-        other = self if other is None else other
-        meta_self = self.labels.copy()
-        meta_other = other.labels.copy()
-        if idx_l is None:
-            idx_l = meta_self.shape[1] + 1
-            meta_self = np.concatenate(
-                (meta_self, np.arange(len(self))[None]), axis=-1)
-            meta_other = np.concatenate(
-                (meta_other, np.arange(len(other))[None]), axis=-1)
-        if idx_g is None:
-            idx_g = meta_self.shape[1] + 1
-            meta_self = np.concatenate(
-                (meta_self, np.zeros(len(self))[None]), axis=-1)
-
-        # add static comparison group "other" for each unique group in "self"
-        _label = "_label"
-        groups = np.unique(self.labels[:, idx_g])
-        meta_self = pd.DataFrame(
-            meta_self[:, [idx_g, idx_l]], columns=[col_group, _label])
-        meta_other = pd.DataFrame(meta_other[:, idx_l], columns=[_label])
-        meta_self = meta_self.assign(
-            **{_vdx: np.arange(len(self))}).set_index(col_group, append=False)
-        meta_other = meta_other.assign(
-            **{_vdx: np.arange(len(other)), col_group: [groups] * len(other)})
-        meta_other = meta_other.explode(col_group).set_index(
-            col_group, append=False)
-
-        # join self and other metadata, indices within rows will be compared
-        _label_other = f"{_label} other"
-        _vdx_other = f"{_vdx} other"
-        meta_self = meta_self.groupby(
-            level=col_group)[[_label, _vdx]].agg(lambda x: list(x))
-        meta_other = meta_other.groupby(
-            level=col_group)[[_label, _vdx]].agg(lambda x: list(x)).rename(
-            columns={_label: _label_other, _vdx: _vdx_other})
-        meta_tot = pd.concat(
-            [meta_self, meta_other], axis=1, ignore_index=False, join="inner")
-
-        # compute similarities and return output
-        meta_tot = meta_tot.apply(
-            lambda x: _cos_by_label(
-                _vectors_0=self.vectors[x[_vdx]],
-                _labels_0=np.array(x[_label]),
-                _vectors_1=other.vectors[x[_vdx_other]],
-                _labels_1=np.array(x[_label_other]),
-                _fill=label_fill), axis=1)
-        return meta_tot
+        # compute and return similarities
+        return self.grouped_control(cont, _cos_by_label, label, group, ignore)
 
     def fit_model(
             self,
             model,
-            idx_l: int = 0,
+            label: str = None,
     ):
-        return model.fit(self.vectors, self.labels[:, idx_l])
+        """
+        Train an encoding model on instance vector data.
 
-    def encode(
-            self,
-            encoder
-    ):
-        return FeatureVector(
-            encoder.transform(self.vectors), self.labels, self.shuffle)
+        Args:
+            model:
+                Encoding model. Must define .fit method per sklearn convention.
+                For an example, see:
+                sklearn.decomposition.PCA.
+            label (str, optional):
+                Metadata level name to use as vector label for supervised
+                models.
+                Defaults to "None", in which case model is unsupervised.
 
-    def classify(
+        Returns:
+            model:
+                Trained model.
+        """
+        labels = None if label is None else self[label]
+        return model.fit(self.data, labels)
+
+    def transform_model(
             self,
-            classifier,
-            idx_l: int = 0,
-            idx_g: int = None
+            model
     ):
-        out = [self.labels[:, idx_l], classifier.predict(self.vectors)]
-        out = out if idx_g is None else out + [self.labels[..., idx_g]]
-        return out
+        """
+        Use a trained encoding model to transform vector data.
+
+        Args:
+            model:
+                Trained encoding model. Must define .transform method per
+                sklearn convention. For an example, see:
+                sklearn.decomposition.PCA.
+
+        Returns:
+            (FeatureVector):
+                New instance with transformed data.
+        """
+        return FeatureVector(model.transform(self.data), self.meta)
+
+    def predict_model(
+            self,
+            model,
+    ):
+        """
+        Use a trained encoding model to predict vector labels.
+
+        Args:
+            model:
+                Trained classification model. Must define .predict method per
+                sklearn convention. For an example, see:
+                sklearn.neighbors.KNeighborsClassifier.
+
+        Returns:
+            (np.ndarray):
+                Predicted label for each vector stored in instance.
+                shape = (self.data.shape[0],).
+        """
+        return model.predict(self.data)
 
     def predict_distribution(
             self,
-            classifier,
+            model,
     ):
-        probabilities = classifier.predict_proba(self.vectors)
-        predictions = np.concatenate(
-            (self.labels, classifier.predict(self.vectors)), axis=-1)
-        return FeatureVector(probabilities, predictions, self.shuffle)
+        """
+        Use a trained encoding model to predict vector class distributions.
+
+        Args:
+            model:
+                Trained classification model. Must define .predict_proba method
+                per sklearn convention. For an example, see:
+                sklearn.neighbors.KNeighborsClassifier.
+
+        Returns:
+            (np.ndarray):
+                Predicted class label probabilities for each vector stored in
+                instance. Each row is a predicted probability distribution
+                across all possible labels.
+                len = (self.data.shape[0], N unique labels).
+        """
+        return model.predict_proba(self.data)
